@@ -16,9 +16,11 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.v1 import documents, reconciliation, analytics
+from .routes.auth_router import router as auth_router
 from .websocket.progress import router as ws_router
 from .dependencies import get_db, get_mongo, get_qdrant, get_publisher
 from ..application.config import get_settings
+from ..infrastructure.telemetry.otel_setup import setup_telemetry
 
 logger = structlog.get_logger(__name__)
 
@@ -28,6 +30,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application startup and shutdown lifecycle."""
     settings = get_settings()
     logger.info("mas_vgfr_starting", version=settings.app_version, env=settings.app_env)
+
+    # Initialize OpenTelemetry tracing
+    setup_telemetry(service_name="ventro-backend")
 
     # Initialize databases
     db = get_db()
@@ -55,19 +60,20 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="MAS-VGFR API",
+        title="Ventro — Auditable AI Reconciliation Engine",
         description=(
             "Multi-Agent System for Visually-Grounded Financial Reconciliation. "
-            "Automates three-way match auditing with pixel-perfect evidence tracing."
+            "Automates three-way match auditing with pixel-perfect evidence tracing "
+            "and SAMR™ hallucination detection."
         ),
         version=settings.app_version,
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/docs" if not settings.is_production else None,   # Disable Swagger in production
+        redoc_url="/api/redoc" if not settings.is_production else None,
+        openapi_url="/api/openapi.json" if not settings.is_production else None,
         lifespan=lifespan,
     )
 
-    # Middleware
+    # ─── Middleware ─────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins,
@@ -77,29 +83,73 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-    # Request timing middleware
+    # Request ID + timing middleware
+    import uuid
     @app.middleware("http")
-    async def add_timing_header(request: Request, call_next):
+    async def request_id_and_timing(request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         start = time.time()
         response = await call_next(request)
-        response.headers["X-Process-Time-Ms"] = str(round((time.time() - start) * 1000, 2))
+        elapsed = round((time.time() - start) * 1000, 2)
+        response.headers["X-Process-Time-Ms"] = str(elapsed)
+        response.headers["X-Request-ID"] = request_id
+        if elapsed > 5000:  # Warn on slow requests
+            logger.warning("slow_request", path=request.url.path, elapsed_ms=elapsed, request_id=request_id)
         return response
 
-    # Routers
+    # Security headers middleware
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+    # ─── Routers ─────────────────────────────────────────────────────────────
+    app.include_router(auth_router, prefix="/api/v1")
     app.include_router(documents.router, prefix="/api/v1")
     app.include_router(reconciliation.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
     app.include_router(ws_router)
 
-    # Root health check
-    @app.get("/health", tags=["Health"])
+    # ─── Health Endpoints ─────────────────────────────────────────────────────
+    # Separate liveness and readiness for Kubernetes probes
+    @app.get("/health/live", tags=["Health"], summary="Liveness probe")
+    async def liveness():
+        """Returns 200 if the process is alive. Used by K8s to decide restart."""
+        return {"status": "alive"}
+
+    @app.get("/health/ready", tags=["Health"], summary="Readiness probe")
+    async def readiness():
+        """Returns 200 if all dependencies are reachable. Used by K8s to route traffic."""
+        checks = {}
+        try:
+            db = get_db()
+            await db.pool.fetchval("SELECT 1")
+            checks["postgresql"] = "ok"
+        except Exception as e:
+            checks["postgresql"] = f"error: {e}"
+
+        try:
+            mongo = get_mongo()
+            await mongo.client.admin.command("ping")
+            checks["mongodb"] = "ok"
+        except Exception as e:
+            checks["mongodb"] = f"error: {e}"
+
+        all_ok = all(v == "ok" for v in checks.values())
+        return JSONResponse(
+            status_code=200 if all_ok else 503,
+            content={"status": "ready" if all_ok else "degraded", "checks": checks}
+        )
+
+    @app.get("/health", tags=["Health"])   # Legacy alias
     async def health():
-        return {
-            "status": "healthy",
-            "service": "MAS-VGFR",
-            "version": settings.app_version,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
+        return {"status": "healthy", "service": "Ventro", "version": settings.app_version,
+                "timestamp": datetime.utcnow().isoformat()}
 
     return app
 
