@@ -116,8 +116,23 @@ def get_doc_processor() -> DocumentProcessor:
     global _doc_processor
     if _doc_processor is None:
         settings = get_settings()
-        _doc_processor = DocumentProcessor(temp_dir=settings.temp_upload_dir)
+        vlm = None
+        if getattr(settings, "vlm_enabled", False):
+            from ..infrastructure.cv.vlm_processor import VLMProcessor
+            vlm_url = getattr(settings, "vlm_ollama_base_url", "") or settings.ollama_base_url
+            vlm = VLMProcessor(
+                ollama_base_url=vlm_url,
+                model=getattr(settings, "vlm_model", "qwen2-vl:7b-instruct"),
+            )
+        _doc_processor = DocumentProcessor(
+            temp_dir=settings.temp_upload_dir,
+            ocr_lang=getattr(settings, "ocr_language", "eng+ara+hin+chi_sim+jpn+kor+rus"),
+            vlm_processor=vlm,
+            enable_vlm=getattr(settings, "vlm_enabled", False),
+            ocr_dpi=getattr(settings, "ocr_dpi", 300),
+        )
     return _doc_processor
+
 
 
 # FastAPI dependency type aliases

@@ -6,6 +6,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     tesseract-ocr \
+    # Multilingual OCR language packs
+    tesseract-ocr-ara \
+    tesseract-ocr-hin \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-chi-tra \
+    tesseract-ocr-jpn \
+    tesseract-ocr-kor \
+    tesseract-ocr-rus \
+    tesseract-ocr-deu \
+    tesseract-ocr-fra \
+    tesseract-ocr-spa \
     libglib2.0-0 \
     libgl1-mesa-glx \
     libgomp1 \

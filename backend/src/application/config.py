@@ -51,17 +51,28 @@ class Settings(BaseSettings):
 
     # Ollama (local self-hosted LLM)
     ollama_base_url: str = "http://localhost:11434"
-    ollama_primary_model: str = "mistral:7b-instruct"
-    ollama_extraction_model: str = "mistral:7b-instruct"
-    ollama_drafting_model: str = "mistral:7b-instruct"
+    # qwen2.5 is multilingual (50+ langs) and near-equal to Mistral in English
+    ollama_primary_model: str = "qwen2.5:7b-instruct"
+    ollama_extraction_model: str = "qwen2.5:7b-instruct"
+    ollama_drafting_model: str = "qwen2.5:7b-instruct"
 
     # Groq (cloud free-tier LLM — used when GROQ_API_KEY is set)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"  # best quality on Groq free tier
 
-    # Embeddings
-    embedding_model: str = "all-MiniLM-L6-v2"
-    embedding_dimension: int = 384
+    # VLM (Visual Language Model — for scanned/image-only documents)
+    vlm_enabled: bool = False  # Set True to enable Qwen2-VL for scanned pages
+    vlm_model: str = "qwen2-vl:7b-instruct"  # ollama pull qwen2-vl:7b-instruct
+    vlm_ollama_base_url: str = ""  # blank = same as ollama_base_url
+
+    # Embeddings — multilingual-e5-large supports 100+ languages (1024 dims)
+    # For English-only deployments: use all-MiniLM-L6-v2 (384 dims, faster)
+    embedding_model: str = "intfloat/multilingual-e5-large-instruct"
+    embedding_dimension: int = 1024
+
+    # OCR
+    ocr_language: str = "eng+ara+hin+chi_sim+jpn+kor+rus"  # Broad multilingual default
+    ocr_dpi: int = 300  # 300 DPI recommended for Tesseract accuracy
 
     # Langfuse
     langfuse_public_key: str = ""
@@ -71,7 +82,9 @@ class Settings(BaseSettings):
 
     # Document Processing
     max_upload_size_mb: int = 50
-    supported_formats: list[str] = Field(default=["pdf", "png", "jpg", "jpeg", "tiff", "docx"])
+    supported_formats: list[str] = Field(
+        default=["pdf", "png", "jpg", "jpeg", "tiff", "docx", "xlsx", "xls", "csv"]
+    )
     temp_upload_dir: str = "/tmp/mas_vgfr_uploads"
 
     # SAMR
