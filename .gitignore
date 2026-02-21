@@ -23,12 +23,17 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!.env.cloud.example
 
 # ─── Node / Frontend ──────────────────────────────────────────────────────
 node_modules/
 dist/
 .vite/
 *.local
+
+# ─── Private / Internal Documents ────────────────────────────────────────
+docs/SystemJournal.md
+*Document Intelligence POC*
 
 # ─── IDE ──────────────────────────────────────────────────────────────────
 .vscode/

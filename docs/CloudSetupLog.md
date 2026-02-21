@@ -103,14 +103,23 @@ QDRANT_API_KEY=your-qdrant-api-key
    - Username: `ventro_user`, Password: strong one
    - Role: `Atlas admin`
 4. **Security → Network Access** → Add IP address → **0.0.0.0/0** (allow all — needed for cloud)
-5. **Databases → Connect** → **Drivers** → copy the connection string:
+5. **Databases → Connect** → **Drivers** → copy the connection string.
+   Atlas formats it as:
    ```
-   mongodb+srv://ventro_user:PASSWORD@cluster0.xxxxx.mongodb.net/
+   scheme://username:your-db-password@cluster-host/
    ```
-6. Append the db name:
+   Where:
+   - `scheme` = `mongodb+srv`
+   - `username` = `ventro_user`
+   - `your-db-password` = the password you set in step 3
+   - `cluster-host` = something like `cluster0.xxxxx.mongodb.net`
+
+6. Append the database name and options to the end of the URL:
    ```
-   mongodb+srv://ventro_user:PASSWORD@cluster0.xxxxx.mongodb.net/ventro_docs?retryWrites=true&w=majority
+   /ventro_docs?retryWrites=true&w=majority
    ```
+   > **Important:** Never paste real credentials into documentation or commit them to git.
+   > Store this URL only in your Render.com environment variables (Task B).
 
 **✅ Done when:** You have the `mongodb+srv://...` connection string.
 
