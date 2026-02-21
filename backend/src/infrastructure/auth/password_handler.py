@@ -1,22 +1,35 @@
 """
 Password Handler
 Secure bcrypt password hashing and verification.
+Uses SHA-256 pre-hashing before bcrypt to avoid the 72-byte truncation bug
+(bcrypt silently ignores bytes beyond position 72 — SHA-256 converts any
+password to a 64-char hex digest, well within bcrypt's limit).
 """
 from __future__ import annotations
 
-from passlib.context import CryptContext
+import hashlib
 
-_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+import bcrypt
+
+
+def _prehash(plain: str) -> str:
+    """SHA-256 pre-hash to avoid bcrypt's 72-byte silent truncation."""
+    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
 
 
 def hash_password(plain: str) -> str:
     """Hash a plaintext password with bcrypt (cost factor 12)."""
-    return _ctx.hash(plain)
+    return bcrypt.hashpw(_prehash(plain).encode(), bcrypt.gensalt(rounds=12)).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plaintext password against its bcrypt hash."""
-    return _ctx.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(_prehash(plain).encode(), hashed.encode())
+    except Exception:
+        return False
+
+
 
 
 def password_strength_ok(password: str) -> tuple[bool, str]:

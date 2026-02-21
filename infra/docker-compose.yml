@@ -7,15 +7,17 @@ services:
     container_name: mas_vgfr_backend
     ports:
       - "8000:8000"
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://mas_vgfr_user:mas_vgfr_password@postgres:5432/mas_vgfr
-      - MONGO_URL=mongodb://mas_vgfr_user:mas_vgfr_password@mongodb:27017/mas_vgfr_docs
-      - REDIS_URL=redis://redis:6379/0
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - LANGFUSE_HOST=http://langfuse:3000
+    environment: &backend_env
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://mas_vgfr_user:mas_vgfr_password@postgres:5432/mas_vgfr
+      MONGO_URL: mongodb://mas_vgfr_user:mas_vgfr_password@mongodb:27017/mas_vgfr_docs
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      OLLAMA_BASE_URL: http://ollama:11434
+      LANGFUSE_HOST: http://langfuse:3000
     volumes:
       - /tmp/mas_vgfr_uploads:/tmp/mas_vgfr_uploads
       - ../backend:/app
@@ -28,6 +30,51 @@ services:
         condition: service_started
       redis:
         condition: service_started
+    restart: unless-stopped
+    networks:
+      - mas_vgfr_net
+
+  # ─── Celery Worker (Reconciliation Queue) ──────────────────────────────────
+  celery_worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: mas_vgfr_celery
+    command: >
+      celery -A src.infrastructure.jobs.celery_app.celery_app worker --loglevel=info --queues=reconciliation,celery --concurrency=2 --max-tasks-per-child=100
+    environment: *backend_env # Reuse exact same env vars as backend
+    volumes:
+      - /tmp/mas_vgfr_uploads:/tmp/mas_vgfr_uploads
+      - ../backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mas_vgfr_net
+    healthcheck:
+      test: [ "CMD", "celery", "-A", "src.infrastructure.jobs.celery_app.celery_app", "inspect", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Celery Beat (Scheduled Tasks) ─────────────────────────────────────────
+  celery_beat:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: mas_vgfr_celery_beat
+    command: >
+      celery -A src.infrastructure.jobs.celery_app.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    environment: *backend_env
+    volumes:
+      - ../backend:/app
+    depends_on:
+      - redis
     restart: unless-stopped
     networks:
       - mas_vgfr_net
@@ -45,7 +92,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mas_vgfr_user -d mas_vgfr"]
+      test: [ "CMD-SHELL", "pg_isready -U mas_vgfr_user -d mas_vgfr" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,7 +113,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -116,7 +163,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
 
   # ─── Frontend ──────────────────────────────────────────────────────────────
   frontend:
@@ -138,6 +185,7 @@ volumes:
   qdrant_data:
   redis_data:
   ollama_data:
+
 
 networks:
   mas_vgfr_net:

@@ -115,34 +115,46 @@ class GroqClient(ILLMClient):
 
     async def get_reasoning_vector(self, prompt: str) -> list[float]:
         """
-        Generate a pseudo-embedding vector from the reasoning chain.
-        Groq doesn't expose an embedding endpoint on its free tier,
-        so we derive a deterministic 64-dim vector from SHA-256 of the
-        full prompt + completion. This preserves SAMR's ability to detect
-        responses that are structurally different (different SHA-256 prefix distribution).
+        Generate a REAL semantic embedding from the reasoning chain.
+
+        Fix (Step 6 production hardening): The original implementation used a
+        SHA-256 hash to build a pseudo-vector. This reduced SAMR to a binary
+        "did outputs differ" check rather than genuine semantic divergence detection.
+
+        Now: we run the LLM, get its completion, then embed *both* the prompt and
+        the completion using the same sentence-transformer model used for Qdrant.
+        This gives SAMR a true semantic vector it can compute cosine similarity on.
+
+        The embedding dimension matches whatever model is configured in Settings
+        (default: intfloat/multilingual-e5-large-instruct → 1024 dims).
         """
-        # Get actual LLM output to include in the hash
+        # Step 1: Get Groq completion (the reasoning output we want to embed)
         try:
             completion = await self.complete(prompt, temperature=0.0, max_tokens=512)
-            combined = prompt[:500] + completion[:500]
-        except Exception:
-            combined = prompt[:1000]
+        except Exception as e:
+            logger.warning("groq_reasoning_vector_completion_failed", error=str(e))
+            completion = ""
 
-        # Build a 64-float vector from SHA-256 bytes
-        h = hashlib.sha256(combined.encode("utf-8")).digest()
-        # Repeat hash to get 64 floats (256 bits / 4 = 64 floats)
-        vector: list[float] = []
-        for i in range(0, 32, 4):
-            val = struct.unpack(">f", h[i : i + 4])[0]
-            # Normalize to [-1, 1] range
-            import math
-            if not math.isfinite(val):
-                val = 0.0
-            vector.append(max(-1.0, min(1.0, val / 1e10)))
-        # Pad to 64 dims
-        while len(vector) < 64:
-            vector.extend(vector[:8])
-        return vector[:64]
+        # Step 2: Embed the reasoning text using the shared sentence-transformer
+        reasoning_text = f"Reasoning: {prompt[:400]}\nConclusion: {completion[:400]}"
+        try:
+            from ...infrastructure.llm.embedding_model import get_embedding_model
+            embedder = await get_embedding_model()
+            vector = await embedder.embed_query(reasoning_text)
+            logger.debug(
+                "groq_reasoning_vector_computed",
+                model=self.model,
+                dims=len(vector),
+                method="sentence_transformer",
+            )
+            return vector
+        except Exception as e:
+            logger.error("groq_reasoning_vector_embedding_failed", error=str(e))
+            # Emergency fallback: zero vector matching embedding dimension
+            from ...application.config import get_settings
+            dims = get_settings().embedding_dimension
+            return [0.0] * dims
+
 
     async def health_check(self) -> bool:
         """Verify Groq API is reachable and key is valid."""

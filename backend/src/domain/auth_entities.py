@@ -8,7 +8,6 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import set as Set
 
 
 class Role(str, Enum):
@@ -48,37 +47,42 @@ class Permission(str, Enum):
     AUDIT_LOG_READ   = "audit_log:read"     # Read immutable audit trail
 
 
-# Role → Permission mapping
-ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
-    Role.EXTERNAL_AUDITOR: {
-        Permission.SESSION_READ,
-        Permission.FINDING_READ,
-        Permission.WORKPAPER_READ,
-        Permission.WORKPAPER_EXPORT,
-    },
-    Role.AP_ANALYST: {
-        Permission.DOCUMENT_UPLOAD,
-        Permission.DOCUMENT_READ,
-        Permission.SESSION_CREATE,
-        Permission.SESSION_READ,
-        Permission.FINDING_READ,
-        Permission.WORKPAPER_READ,
-        Permission.ANALYTICS_READ,
-    },
-    Role.AP_MANAGER: {
-        *ROLE_PERMISSIONS.get(Role.AP_ANALYST, set()),
-        Permission.DOCUMENT_DELETE,
-        Permission.SESSION_DELETE,
-        Permission.FINDING_OVERRIDE,
-        Permission.WORKPAPER_EXPORT,
-        Permission.WORKPAPER_SIGN,
-    },
-    Role.FINANCE_DIRECTOR: {
-        *ROLE_PERMISSIONS.get(Role.AP_MANAGER, set()),
-        Permission.AUDIT_LOG_READ,
-    },
-    Role.ADMIN: set(Permission),  # All permissions
+# Role → Permission mapping — built incrementally to avoid forward-reference errors
+ROLE_PERMISSIONS: dict[Role, set[Permission]] = {}
+
+ROLE_PERMISSIONS[Role.EXTERNAL_AUDITOR] = {
+    Permission.SESSION_READ,
+    Permission.FINDING_READ,
+    Permission.WORKPAPER_READ,
+    Permission.WORKPAPER_EXPORT,
 }
+
+ROLE_PERMISSIONS[Role.AP_ANALYST] = {
+    Permission.DOCUMENT_UPLOAD,
+    Permission.DOCUMENT_READ,
+    Permission.SESSION_CREATE,
+    Permission.SESSION_READ,
+    Permission.FINDING_READ,
+    Permission.WORKPAPER_READ,
+    Permission.ANALYTICS_READ,
+}
+
+ROLE_PERMISSIONS[Role.AP_MANAGER] = {
+    *ROLE_PERMISSIONS[Role.AP_ANALYST],
+    Permission.DOCUMENT_DELETE,
+    Permission.SESSION_DELETE,
+    Permission.FINDING_OVERRIDE,
+    Permission.WORKPAPER_EXPORT,
+    Permission.WORKPAPER_SIGN,
+}
+
+ROLE_PERMISSIONS[Role.FINANCE_DIRECTOR] = {
+    *ROLE_PERMISSIONS[Role.AP_MANAGER],
+    Permission.AUDIT_LOG_READ,
+}
+
+ROLE_PERMISSIONS[Role.ADMIN] = set(Permission)   # All permissions
+
 
 
 def get_permissions(role: Role) -> set[Permission]:
