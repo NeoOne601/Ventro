@@ -2,7 +2,7 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# System dependencies for document processing
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     tesseract-ocr \
@@ -11,23 +11,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     gcc \
     g++ \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
+# Python dependencies
 COPY pyproject.toml .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e ".[dev]"
+    pip install --no-cache-dir -e "."
 
-# Copy application code
+# Source code
 COPY src/ ./src/
 
-# Create temp upload directory
-RUN mkdir -p /tmp/mas_vgfr_uploads
+# Upload directory
+RUN mkdir -p /tmp/ventro_uploads
 
-# Non-root user for security
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app /tmp/mas_vgfr_uploads
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+# Non-root user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app /tmp/ventro_uploads
 USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "src.presentation.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Render/Railway set $PORT automatically; fall back to 8000 for local
+CMD ["sh", "-c", "uvicorn src.presentation.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

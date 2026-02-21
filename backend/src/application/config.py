@@ -49,11 +49,15 @@ class Settings(BaseSettings):
     qdrant_port: int = 6333
     qdrant_collection_name: str = "mas_vgfr_docs"
 
-    # Ollama
+    # Ollama (local self-hosted LLM)
     ollama_base_url: str = "http://localhost:11434"
     ollama_primary_model: str = "mistral:7b-instruct"
     ollama_extraction_model: str = "mistral:7b-instruct"
     ollama_drafting_model: str = "mistral:7b-instruct"
+
+    # Groq (cloud free-tier LLM — used when GROQ_API_KEY is set)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"  # best quality on Groq free tier
 
     # Embeddings
     embedding_model: str = "all-MiniLM-L6-v2"
