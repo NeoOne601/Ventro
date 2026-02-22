@@ -16,9 +16,10 @@ import apiClient from '../services/api'
 import UserTable from '../components/admin/UserTable'
 import InviteUserModal from '../components/admin/InviteUserModal'
 import WebhookPanel from '../components/admin/WebhookPanel'
+import OrgGrid from '../components/admin/OrgGrid'
 import '../styles/admin.css'
 
-type AdminTab = 'users' | 'webhooks' | 'compliance'
+type AdminTab = 'users' | 'webhooks' | 'compliance' | 'orgs'
 
 export default function AdminPage() {
     const { user } = useAuth()
@@ -53,6 +54,7 @@ export default function AdminPage() {
         { id: 'users', label: 'User Management', icon: '👥' },
         { id: 'webhooks', label: 'Webhooks', icon: '🔔' },
         { id: 'compliance', label: 'Compliance', icon: '📋' },
+        ...(isMaster ? [{ id: 'orgs' as AdminTab, label: 'Organisations', icon: '🌐' }] : []),
     ]
 
     return (
@@ -92,6 +94,7 @@ export default function AdminPage() {
             <div className="admin-content">
                 {activeTab === 'users' && <UserTable isMaster={isMaster} />}
                 {activeTab === 'webhooks' && <WebhookPanel />}
+                {activeTab === 'orgs' && isMaster && <OrgGrid />}
                 {activeTab === 'compliance' && (
                     <CompliancePanel
                         onGenerate={handleGeneratePack}

@@ -8,6 +8,7 @@ import ReconciliationPage from './pages/ReconciliationPage'
 import SessionsPage from './pages/SessionsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import AdminPage from './pages/AdminPage'
+import BulkUploadPage from './pages/BulkUploadPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
@@ -59,6 +60,13 @@ function AppLayout() {
                     <Route path="/admin" element={
                         <ProtectedRoute minimumRole="admin">
                             <AdminPage />
+                        </ProtectedRoute>
+                    } />
+
+                    {/* AP Manager+ — bulk upload & batch reconciliation */}
+                    <Route path="/bulk" element={
+                        <ProtectedRoute minimumRole="ap_manager">
+                            <BulkUploadPage />
                         </ProtectedRoute>
                     } />
 

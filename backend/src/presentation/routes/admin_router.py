@@ -502,3 +502,226 @@ async def generate_evidence_pack(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── MASTER: Cross-Org Panel ───────────────────────────────────────────────────
+
+TIER_PRICES = {"starter": 0, "growth": 499, "enterprise": 1999, "enterprise_plus": 4999}
+
+
+class OrgSummary(BaseModel):
+    id: str
+    name: str
+    slug: str
+    tier: str
+    is_active: bool
+    created_at: datetime
+    user_count: int = 0
+    session_count_30d: int = 0
+    samr_alert_rate_30d: float = 0.0
+    webhook_count: int = 0
+
+
+class OrgDetail(OrgSummary):
+    total_sessions: int = 0
+    avg_session_duration_seconds: float = 0.0
+    last_activity_at: datetime | None = None
+
+
+class CreateOrgRequest(BaseModel):
+    name: str
+    slug: str
+    tier: str = "starter"
+
+class UpdateOrgRequest(BaseModel):
+    tier: str | None = None
+    is_active: bool | None = None
+
+
+@router.get("/orgs", response_model=list[OrgSummary])
+async def list_organisations(
+    current_user: Annotated[User, Depends(MasterOnly)],
+    db=Depends(get_db),
+    search: str = Query(""),
+    tier: str = Query(""),
+) -> list[OrgSummary]:
+    """
+    MASTER only — list all organisations with health metrics.
+    Metrics: user count, 30d session count, SAMR alert rate, webhook count.
+    """
+    search_clause = f"AND (name ILIKE '%{search}%' OR slug ILIKE '%{search}%')" if search else ""
+    tier_clause = f"AND tier = '{tier}'" if tier else ""
+
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT
+              o.id, o.name, o.slug, o.tier, o.is_active, o.created_at,
+              (SELECT COUNT(*) FROM users u WHERE u.organisation_id = o.id) AS user_count,
+              (SELECT COUNT(*) FROM reconciliation_sessions rs
+               WHERE rs.organisation_id = o.id
+                 AND rs.created_at > NOW() - INTERVAL '30 days') AS session_count_30d,
+              (SELECT COUNT(*) FROM webhook_endpoints we WHERE we.org_id = o.id) AS webhook_count,
+              COALESCE((
+                SELECT COUNT(*) FILTER (WHERE sf.samr_triggered = TRUE) * 1.0 /
+                       NULLIF(COUNT(*), 0)
+                FROM samr_feedback sf WHERE sf.org_id = o.id
+                  AND sf.submitted_at > NOW() - INTERVAL '30 days'
+              ), 0.0) AS samr_alert_rate_30d
+            FROM organisations o
+            WHERE 1=1 {search_clause} {tier_clause}
+            ORDER BY o.created_at DESC
+            """
+        )
+
+    return [OrgSummary(
+        id=str(r["id"]), name=r["name"], slug=r["slug"],
+        tier=r["tier"], is_active=r["is_active"], created_at=r["created_at"],
+        user_count=r["user_count"], session_count_30d=r["session_count_30d"],
+        samr_alert_rate_30d=float(r["samr_alert_rate_30d"]),
+        webhook_count=r["webhook_count"],
+    ) for r in rows]
+
+
+@router.get("/orgs/global-stats")
+async def global_platform_stats(
+    current_user: Annotated[User, Depends(MasterOnly)],
+    db=Depends(get_db),
+) -> dict:
+    """MASTER only — platform-wide aggregates for executive dashboard."""
+    async with db.acquire() as conn:
+        stats = await conn.fetchrow(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM organisations) AS total_orgs,
+              (SELECT COUNT(*) FROM organisations WHERE is_active) AS active_orgs,
+              (SELECT COUNT(*) FROM users) AS total_users,
+              (SELECT COUNT(*) FROM reconciliation_sessions
+               WHERE created_at > NOW() - INTERVAL '30 days') AS sessions_30d,
+              (SELECT COUNT(*) FROM reconciliation_sessions
+               WHERE status = 'completed'
+                 AND created_at > NOW() - INTERVAL '30 days') AS completed_30d,
+              COALESCE((SELECT COUNT(*) FILTER (WHERE feedback = 'correct') * 1.0 /
+                        NULLIF(COUNT(*) FILTER (WHERE samr_triggered), 0)
+                        FROM samr_feedback
+                        WHERE submitted_at > NOW() - INTERVAL '30 days'), 0.0) AS samr_precision_30d
+            """
+        )
+        tiers = await conn.fetch(
+            "SELECT tier, COUNT(*) as count FROM organisations GROUP BY tier"
+        )
+
+    total_orgs = stats["total_orgs"] or 0
+    tier_counts = {r["tier"]: r["count"] for r in tiers}
+    mrr = sum(TIER_PRICES.get(t, 0) * c for t, c in tier_counts.items())
+
+    return {
+        "total_orgs": total_orgs,
+        "active_orgs": stats["active_orgs"] or 0,
+        "total_users": stats["total_users"] or 0,
+        "sessions_30d": stats["sessions_30d"] or 0,
+        "completed_30d": stats["completed_30d"] or 0,
+        "samr_precision_30d": round(float(stats["samr_precision_30d"] or 0), 3),
+        "tier_distribution": tier_counts,
+        "estimated_mrr_usd": mrr,
+    }
+
+
+@router.post("/orgs", status_code=201)
+async def create_organisation(
+    body: CreateOrgRequest,
+    current_user: Annotated[User, Depends(MasterOnly)],
+    db=Depends(get_db),
+) -> dict:
+    """MASTER only — create a new organisation."""
+    org_id = str(uuid.uuid4())
+    async with db.acquire() as conn:
+        try:
+            await conn.execute(
+                """
+                INSERT INTO organisations (id, name, slug, tier)
+                VALUES ($1::uuid, $2, $3, $4)
+                """,
+                org_id, body.name, body.slug.lower(), body.tier,
+            )
+        except Exception:
+            raise HTTPException(409, detail="Organisation slug already exists")
+    logger.info("admin_org_created", master=current_user.id, org_id=org_id, slug=body.slug)
+    return {"id": org_id, "name": body.name, "slug": body.slug, "tier": body.tier}
+
+
+@router.get("/orgs/{org_id}", response_model=OrgDetail)
+async def get_organisation(
+    org_id: str,
+    current_user: Annotated[User, Depends(MasterOnly)],
+    db=Depends(get_db),
+) -> OrgDetail:
+    """MASTER only — detailed org view with aggregate metrics."""
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              o.id, o.name, o.slug, o.tier, o.is_active, o.created_at,
+              (SELECT COUNT(*) FROM users u WHERE u.organisation_id = o.id) AS user_count,
+              (SELECT COUNT(*) FROM reconciliation_sessions rs
+               WHERE rs.organisation_id = o.id
+                 AND rs.created_at > NOW() - INTERVAL '30 days') AS session_count_30d,
+              (SELECT COUNT(*) FROM reconciliation_sessions rs
+               WHERE rs.organisation_id = o.id) AS total_sessions,
+              (SELECT COUNT(*) FROM webhook_endpoints we WHERE we.org_id = o.id) AS webhook_count,
+              COALESCE((
+                SELECT COUNT(*) FILTER (WHERE sf.samr_triggered) * 1.0 /
+                       NULLIF(COUNT(*), 0)
+                FROM samr_feedback sf WHERE sf.org_id = o.id
+                  AND sf.submitted_at > NOW() - INTERVAL '30 days'
+              ), 0.0) AS samr_alert_rate_30d,
+              COALESCE((
+                SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at)))
+                FROM reconciliation_sessions rs
+                WHERE rs.organisation_id = o.id AND rs.status = 'completed'
+              ), 0.0) AS avg_session_duration_seconds,
+              (SELECT MAX(created_at) FROM reconciliation_sessions rs
+               WHERE rs.organisation_id = o.id) AS last_activity_at
+            FROM organisations o WHERE o.id = $1::uuid
+            """,
+            org_id,
+        )
+    if not row:
+        raise HTTPException(404, detail="Organisation not found")
+    return OrgDetail(
+        id=str(row["id"]), name=row["name"], slug=row["slug"],
+        tier=row["tier"], is_active=row["is_active"], created_at=row["created_at"],
+        user_count=row["user_count"], session_count_30d=row["session_count_30d"],
+        samr_alert_rate_30d=float(row["samr_alert_rate_30d"]),
+        webhook_count=row["webhook_count"],
+        total_sessions=row["total_sessions"],
+        avg_session_duration_seconds=float(row["avg_session_duration_seconds"]),
+        last_activity_at=row["last_activity_at"],
+    )
+
+
+@router.patch("/orgs/{org_id}", status_code=204)
+async def update_organisation(
+    org_id: str,
+    body: UpdateOrgRequest,
+    current_user: Annotated[User, Depends(MasterOnly)],
+    db=Depends(get_db),
+) -> None:
+    """MASTER only — update org tier or active status."""
+    updates, params, i = [], [], 1
+    if body.tier is not None:
+        if body.tier not in TIER_PRICES:
+            raise HTTPException(422, detail=f"Invalid tier. Valid: {list(TIER_PRICES)}")
+        updates.append(f"tier = ${i}"); params.append(body.tier); i += 1
+    if body.is_active is not None:
+        updates.append(f"is_active = ${i}"); params.append(body.is_active); i += 1
+    if not updates:
+        return
+    params.append(uuid.UUID(org_id))
+    async with db.acquire() as conn:
+        result = await conn.execute(
+            f"UPDATE organisations SET {', '.join(updates)} WHERE id = ${i}", *params
+        )
+    if result == "UPDATE 0":
+        raise HTTPException(404, detail="Organisation not found")
+    logger.info("admin_org_updated", master=current_user.id, org_id=org_id)

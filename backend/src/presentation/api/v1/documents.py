@@ -148,3 +148,142 @@ async def get_parsed_document(document_id: str, mongo: MongoDep = None) -> JSONR
     if not data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parsed document not found")
     return JSONResponse(content=data)
+
+
+# ── Version History ──────────────────────────────────────────────────────────
+
+@router.get("/{document_id}/history")
+async def get_document_history(document_id: str, mongo: MongoDep = None) -> JSONResponse:
+    """
+    Return all upload versions for a document, newest first.
+    Each entry includes metadata summary + line item count — no full data.
+    """
+    history = await mongo.get_document_history(document_id)
+    if not history:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No history found for document (may not exist or was never re-uploaded)"
+        )
+    return JSONResponse(content=history)
+
+
+@router.get("/{document_id}/diff/{v1}/{v2}")
+async def get_document_diff(
+    document_id: str,
+    v1: int,
+    v2: int,
+    mongo: MongoDep = None,
+) -> JSONResponse:
+    """
+    Structured diff between two document versions.
+    Returns: metadata_changes (field-level), line_item_changes (added/removed/changed).
+    """
+    if v1 == v2:
+        raise HTTPException(status_code=400, detail="v1 and v2 must be different")
+    diff = await mongo.get_document_diff(document_id, v1, v2)
+    if "error" in diff:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=diff["error"])
+    return JSONResponse(content=diff)
+
+
+# ── Bulk Upload ──────────────────────────────────────────────────────────────
+
+MAX_BULK_FILES = 50
+
+
+@router.post("/bulk", status_code=status.HTTP_202_ACCEPTED)
+async def bulk_upload_documents(
+    files: list[UploadFile] = File(...),
+    db: DBDep = None,
+    mongo: MongoDep = None,
+    processor: DocProcessorDep = None,
+) -> JSONResponse:
+    """
+    Upload up to 50 files for bulk batch reconciliation.
+
+    Processing pipeline:
+      1. Validate + save each file to temp storage
+      2. Fire a Celery chord: N×process_document_in_batch tasks
+      3. Chord callback: batch_match_and_dispatch groups docs into PO+GRN+Invoice
+         triplets and enqueues reconciliation sessions automatically
+      4. Connect to WebSocket /ws/batch/{batch_id} for real-time progress
+
+    Returns: batch_id + per-file initial status list
+    """
+    if len(files) > MAX_BULK_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Too many files. Maximum is {MAX_BULK_FILES}.",
+        )
+
+    from celery import chord as celery_chord
+    from ...infrastructure.jobs.batch_tasks import (
+        process_document_in_batch,
+        batch_match_and_dispatch,
+    )
+
+    batch_id = str(uuid.uuid4())
+    tasks_info = []
+
+    for file in files:
+        content_type = file.content_type or ""
+        if not any(a in content_type for a in ALLOWED_TYPES):
+            tasks_info.append({
+                "filename": file.filename,
+                "status": "rejected",
+                "reason": f"Unsupported type: {content_type}",
+                "file_id": None,
+            })
+            continue
+
+        content = await file.read()
+        if len(content) > settings.max_upload_size_bytes:
+            tasks_info.append({
+                "filename": file.filename,
+                "status": "rejected",
+                "reason": "File exceeds size limit",
+                "file_id": None,
+            })
+            continue
+
+        file_id = str(uuid.uuid4())
+        ext = ALLOWED_TYPES.get(content_type, "pdf")
+        temp_path = Path(settings.temp_upload_dir) / f"{file_id}.{ext}"
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+        import aiofiles as _aiofiles
+        async with _aiofiles.open(temp_path, "wb") as f:
+            await f.write(content)
+
+        tasks_info.append({
+            "filename": file.filename,
+            "file_id": file_id,
+            "status": "queued",
+        })
+
+    # Build Celery chord for accepted files
+    accepted = [t for t in tasks_info if t["status"] == "queued"]
+    if accepted:
+        chord_header = [
+            process_document_in_batch.s(t["file_id"], batch_id)
+            for t in accepted
+        ]
+        celery_chord(chord_header)(
+            batch_match_and_dispatch.s(batch_id)
+        )
+
+    logger.info("bulk_upload_accepted", batch_id=batch_id, files=len(accepted))
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "batch_id": batch_id,
+            "accepted": len(accepted),
+            "rejected": len(tasks_info) - len(accepted),
+            "files": tasks_info,
+            "ws_channel": f"/ws/batch/{batch_id}",
+            "message": (
+                f"Processing {len(accepted)} files. Connect to ws_channel for live progress. "
+                f"Sessions will be queued automatically once triplets are matched."
+            ),
+        },
+    )

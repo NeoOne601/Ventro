@@ -111,11 +111,29 @@ class SAMRAgent:
     2. SHADOW stream: processes adversarially perturbed data, generates reasoning vector
     3. RECONCILER: computes cosine similarity - high similarity means model didn't
        notice the perturbation → reasoning failure → SAMR Alert triggered
+
+    divergence_threshold is now ADAPTIVE per-org (Bayesian F-score optimiser).
+    Falls back to static config value when no threshold_svc is injected.
     """
 
-    def __init__(self, llm: ILLMClient, divergence_threshold: float = 0.85) -> None:
+    def __init__(
+        self,
+        llm: ILLMClient,
+        divergence_threshold: float = 0.85,
+        threshold_svc: Any = None,    # AdaptiveThresholdService | None
+    ) -> None:
         self.llm = llm
         self.divergence_threshold = divergence_threshold
+        self.threshold_svc = threshold_svc
+
+    async def _get_threshold(self, org_id: str | None) -> float:
+        """Return adaptive threshold for org, or static fallback."""
+        if self.threshold_svc and org_id:
+            try:
+                return await self.threshold_svc.get_threshold(org_id)
+            except Exception:
+                pass
+        return self.divergence_threshold
 
     async def _run_primary_stream(self, context: str) -> tuple[str, list[float]]:
         """Run primary analysis on verified factual data."""
@@ -135,14 +153,19 @@ class SAMRAgent:
         return response, reasoning_vector, perturbation_desc
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Execute SAMR dual-stream analysis."""
+        """Execute SAMR dual-stream analysis with adaptive per-org threshold."""
         from ...application.config import get_settings
         settings = get_settings()
 
         session_id = state["session_id"]
+        org_id = state.get("org_id")     # Injected by orchestrator
         context = _build_context(state)
 
-        logger.info("samr_starting", session_id=session_id)
+        # Resolve adaptive threshold
+        threshold = await self._get_threshold(org_id)
+
+        logger.info("samr_starting", session_id=session_id,
+                    threshold=threshold, org_id=org_id)
 
         # === PRIMARY STREAM ===
         primary_response, primary_vector = await self._run_primary_stream(context)
@@ -155,10 +178,8 @@ class SAMRAgent:
         # === RECONCILIATION ===
         similarity_score = _cosine_similarity(primary_vector, shadow_vector)
 
-        # Key insight: if similarity is HIGH despite perturbation, 
-        # the model is NOT detecting changes → reasoning failure
         alert_triggered = (
-            similarity_score >= self.divergence_threshold
+            similarity_score >= threshold
             and perturbation_desc != "No significant perturbation applied"
         )
 
@@ -180,10 +201,11 @@ class SAMRAgent:
             "primary_confidence": primary_parsed.get("confidence", 0),
             "shadow_confidence": shadow_parsed.get("confidence", 0),
             "cosine_similarity_score": round(similarity_score, 4),
-            "divergence_threshold": self.divergence_threshold,
+            "divergence_threshold": threshold,    # adaptive value logged
             "alert_triggered": alert_triggered,
             "perturbation_applied": perturbation_desc,
-            "reasoning_vectors_diverged": similarity_score < self.divergence_threshold,
+            "reasoning_vectors_diverged": similarity_score < threshold,
+            "threshold_source": "adaptive" if self.threshold_svc and org_id else "static",
             "interpretation": (
                 "⚠️ REASONING FAILURE: Model did not detect adversarial perturbation. "
                 "High confidence outputs may be hallucinated. Human review mandatory."
