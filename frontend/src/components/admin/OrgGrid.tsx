@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '../../services/api'
 import OrgDetailDrawer from './OrgDetailDrawer'
-import './OrgGrid.css'
+
 
 const TIER_COLORS: Record<string, string> = {
     starter: '#64748b',
