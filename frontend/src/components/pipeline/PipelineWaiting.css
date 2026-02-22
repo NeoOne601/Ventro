@@ -1,0 +1,212 @@
+/* ─── Pipeline Waiting (Mercury Markets mini-game) ──────────────────────── */
+
+.pw-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 28px;
+    background: rgba(10, 15, 30, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 20px;
+    backdrop-filter: blur(24px);
+    max-width: 680px;
+    margin: 0 auto;
+    box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(99, 102, 241, 0.1);
+}
+
+/* Header */
+.pw-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.pw-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(99, 102, 241, 0.2);
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: pw-spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes pw-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.pw-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.pw-subtitle {
+    font-size: 13px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+/* Progress bar */
+.pw-progress-track {
+    position: relative;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 100px;
+    overflow: hidden;
+}
+
+.pw-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #06b6d4, #10b981);
+    border-radius: 100px;
+    transition: width 0.8s ease;
+    position: relative;
+}
+
+.pw-progress-fill::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: -2px;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.8);
+}
+
+.pw-progress-pct {
+    position: absolute;
+    right: 0;
+    top: -20px;
+    font-size: 11px;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Stage dots */
+.pw-stages {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+.pw-stage-dot {
+    flex: 1;
+    text-align: center;
+    font-size: 18px;
+    padding: 6px 0;
+    position: relative;
+    opacity: 0.25;
+    transition: opacity 0.4s, filter 0.4s;
+}
+
+.pw-stage-dot::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #334155;
+}
+
+.pw-stage-dot--done {
+    opacity: 0.6;
+}
+
+.pw-stage-dot--done::after {
+    background: #10b981;
+}
+
+.pw-stage-dot--active {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.8));
+    animation: pw-pulse-icon 1s ease-in-out infinite alternate;
+}
+
+.pw-stage-dot--active::after {
+    background: #6366f1;
+    box-shadow: 0 0 6px #6366f1;
+    animation: pw-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes pw-pulse-icon {
+    from {
+        transform: scale(1);
+    }
+
+    to {
+        transform: scale(1.2);
+    }
+}
+
+@keyframes pw-pulse {
+    from {
+        box-shadow: 0 0 4px #6366f1;
+    }
+
+    to {
+        box-shadow: 0 0 12px #6366f1;
+    }
+}
+
+/* Mini-game */
+.pw-game-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.pw-game-label {
+    font-size: 11px;
+    color: #475569;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.pw-canvas {
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    max-width: 100%;
+    display: block;
+    image-rendering: crisp-edges;
+}
+
+.pw-game-hint {
+    font-size: 10px;
+    color: #334155;
+    text-align: center;
+}
+
+/* Scrolling fact ticker */
+.pw-fact-ticker {
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 11px;
+    color: #475569;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pw-fact-ticker span {
+    display: inline-block;
+    animation: pw-ticker 28s linear infinite;
+}
+
+@keyframes pw-ticker {
+    from {
+        transform: translateX(100%);
+    }
+
+    to {
+        transform: translateX(-100%);
+    }
+}

@@ -18,6 +18,7 @@ import React, {
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
+import { setAuthTokens, clearAuthTokens, setUnauthorizedHandler } from '../services/api'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         access: string,
         refresh: string
     ) => {
+        // Wire into Axios interceptor immediately so /auth/me call is authenticated
+        setAuthTokens(access, refresh)
+
         // Fetch full profile so we have name, email, permissions
         const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
             headers: { Authorization: `Bearer ${access}` },
@@ -211,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedRefresh = refreshToken
 
         clearAuthState()
+        clearAuthTokens()  // Clear from Axios interceptor
 
         try {
             if (logoutAll && access) {
@@ -251,13 +256,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // ── Boot: restore session from localStorage refresh token ──────────────────
 
     useEffect(() => {
+        // Register the unauthorized handler so the Axios interceptor can
+        // trigger a full logout if the refresh token is also invalid.
+        setUnauthorizedHandler(() => {
+            clearAuthState()
+            clearAuthTokens()
+            navigate('/login')
+        })
+
         const storedRefresh = localStorage.getItem('ventro_refresh_token')
         if (storedRefresh) {
             silentRefresh(storedRefresh)
         } else {
             setState(s => ({ ...s, isLoading: false }))
         }
-    }, []) // only on mount
+    }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <AuthContext.Provider value={{

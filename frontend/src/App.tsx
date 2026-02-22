@@ -8,6 +8,7 @@ import ReconciliationPage from './pages/ReconciliationPage'
 import SessionsPage from './pages/SessionsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
 
 function AppLayout() {
@@ -78,6 +79,7 @@ export default function App() {
     return (
         <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
             <Route
                 path="/*"
                 element={

@@ -99,7 +99,14 @@ class UserRepository:
             )
 
     async def revoke_all_user_tokens(self, user_id: str) -> None:
-        """Force logout from all devices."""
+        """Force logout from all devices (legacy name)."""
+        await self.revoke_all_refresh_tokens(user_id)
+
+    async def revoke_all_refresh_tokens(self, user_id: str) -> None:
+        """
+        Revoke every active refresh token for a user.
+        Called by /auth/logout-all to invalidate all device sessions.
+        """
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1", user_id

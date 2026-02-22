@@ -1,0 +1,260 @@
+/* ─── Register page additional styles ───────────────────────────────────── */
+
+.rg-card {
+    width: 480px;
+    max-width: calc(100vw - 32px);
+}
+
+.rg-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+/* Step breadcrumb */
+.rg-steps {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rg-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #475569;
+    transition: color 0.3s;
+}
+
+.rg-step--active {
+    color: #818cf8;
+}
+
+.rg-step-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    transition: background 0.3s, border-color 0.3s;
+}
+
+.rg-step--active .rg-step-dot {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.5);
+    color: #818cf8;
+}
+
+.rg-step-line {
+    width: 20px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Org slug input with prefix */
+.rg-org-input-wrap {
+    position: relative;
+}
+
+.rg-org-prefix {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    color: #475569;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.rg-org-hint {
+    font-size: 11px;
+    color: #334155;
+    margin-top: 4px;
+}
+
+/* Role information cards */
+.rg-role-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.rg-role-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.rg-role-card>span {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.rg-role-name {
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 1px;
+}
+
+.rg-role-desc {
+    color: #475569;
+    line-height: 1.4;
+}
+
+/* Password strength */
+.rg-strength {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.rg-strength-bar {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+}
+
+.rg-strength-seg {
+    height: 4px;
+    flex: 1;
+    border-radius: 100px;
+    transition: background 0.3s;
+}
+
+.rg-strength span {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: color 0.3s;
+}
+
+/* Password rules */
+.rg-pw-rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 6px;
+}
+
+.rg-pw-rule {
+    font-size: 10px;
+    color: #334155;
+}
+
+/* Actions row for step 2 */
+.rg-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.rg-submit {
+    flex: 1;
+}
+
+/* Sign in link */
+.rg-signin-link {
+    text-align: center;
+    font-size: 13px;
+    color: #475569;
+    margin-top: 8px;
+}
+
+.rg-signin-link a {
+    color: #818cf8;
+    text-decoration: none;
+}
+
+.rg-signin-link a:hover {
+    text-decoration: underline;
+}
+
+/* Success state */
+.rg-success-card {
+    text-align: center;
+    align-items: center;
+}
+
+.rg-success-icon {
+    font-size: 64px;
+}
+
+.rg-success-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin: 8px 0 4px;
+}
+
+.rg-success-sub {
+    font-size: 14px;
+    color: #64748b;
+}
+
+.rg-success-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(16, 185, 129, 0.2);
+    border-top-color: #10b981;
+    border-radius: 50%;
+    animation: pw-spin 0.7s linear infinite;
+    margin-top: 16px;
+}
+
+/* Background network SVG */
+.rg-network {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.rg-node {
+    fill: rgba(99, 102, 241, 0.15);
+    animation: rg-node-pulse 3s ease-in-out infinite alternate;
+}
+
+@keyframes rg-node-pulse {
+    from {
+        r: 3;
+        opacity: 0.3;
+    }
+
+    to {
+        r: 5;
+        opacity: 0.7;
+    }
+}
+
+.rg-edge {
+    stroke: rgba(99, 102, 241, 0.06);
+    stroke-width: 1;
+    animation: rg-edge-fade 4s ease-in-out infinite alternate;
+}
+
+@keyframes rg-edge-fade {
+    from {
+        opacity: 0.2;
+    }
+
+    to {
+        opacity: 0.6;
+    }
+}
