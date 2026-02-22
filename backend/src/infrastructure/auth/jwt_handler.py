@@ -1,11 +1,12 @@
 """
-JWT Handler
-Handles creation, verification, and rotation of JWT access and refresh tokens.
+JWT Handler — Access token creation, verification, and refresh token generation.
+Each access token now embeds a unique `jti` (JWT ID) for denylist-based revocation.
 """
 from __future__ import annotations
 
 import hashlib
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -32,16 +33,18 @@ def create_access_token(
     extra: dict[str, Any] | None = None,
     expires_delta: timedelta | None = None,
 ) -> str:
-    """Create a signed JWT access token."""
+    """Create a signed JWT access token with a unique jti for denylist support."""
     settings = get_settings()
-    expire = _utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    now = _utcnow()
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     payload: dict[str, Any] = {
-        "sub": subject,
+        "sub":  subject,
         "role": role,
-        "org": org_id,
-        "iat": _utcnow(),
-        "exp": expire,
+        "org":  org_id,
+        "iat":  now,
+        "exp":  expire,
         "type": "access",
+        "jti":  str(uuid.uuid4()),   # Unique token ID — used for denylist revocation
     }
     if extra:
         payload.update(extra)
@@ -63,6 +66,8 @@ def verify_access_token(token: str) -> dict[str, Any]:
     """
     Decode and verify a JWT access token.
     Raises JWTError on invalid/expired tokens.
+    NOTE: denylist check is NOT done here — it's done in get_current_user()
+    because we need the async Redis call for that.
     """
     settings = get_settings()
     try:

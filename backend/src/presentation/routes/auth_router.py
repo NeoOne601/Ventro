@@ -207,20 +207,86 @@ async def refresh_token(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(body: RefreshRequest, db=Depends(get_db)) -> None:
-    """Revoke refresh token (client should also discard the access token)."""
+async def logout(request: Request, body: RefreshRequest, db=Depends(get_db)) -> None:
+    """
+    Revoke both the refresh token (DB) and the current access token (Redis denylist).
+    After this call, the access token is invalid immediately — no waiting for expiry.
+    """
     repo = UserRepository(db.pool)
+    # Revoke refresh token in PostgreSQL
     await repo.revoke_refresh_token(hash_refresh_token(body.refresh_token))
+
+    # Revoke the current access token via denylist
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            token = auth_header[7:]
+            payload = verify_access_token(token)
+            jti = payload.get("jti")
+            exp = payload.get("exp", 0)
+            if jti:
+                from ...infrastructure.auth.token_denylist import get_denylist
+                await get_denylist().revoke(jti, float(exp))
+        except Exception:
+            pass   # Best-effort; refresh token already revoked
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all_devices(
+    request: Request,
+    db=Depends(get_db),
+) -> None:
+    """
+    Invalidate ALL active sessions for the current user (logout all devices).
+    Requires a valid access token. Does NOT need the refresh token.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing access token")
+    try:
+        payload = verify_access_token(auth_header[7:])
+        user_id = payload["sub"]
+        exp = payload.get("exp", 0)
+        from ...infrastructure.auth.token_denylist import get_denylist
+        denylist = get_denylist()
+        # Revoke current token
+        if payload.get("jti"):
+            await denylist.revoke(payload["jti"], float(exp))
+        # Mark all tokens issued before now as globally revoked
+        await denylist.revoke_all_for_user(user_id, float(exp))
+        # Also revoke all DB refresh tokens
+        repo = UserRepository(db.pool)
+        await repo.revoke_all_refresh_tokens(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/me", response_model=UserProfile)
-async def get_me(request: Request) -> UserProfile:
-    """Get current user profile from the JWT in the Authorization header."""
+async def get_me(request: Request, db=Depends(get_db)) -> UserProfile:
+    """Get current user profile — pulls full data from DB for accurate name/email."""
     token = _extract_bearer(request)
     payload = verify_access_token(token)
+    user_id = payload["sub"]
+
+    # Pull from DB for accurate name, email, is_active
+    try:
+        repo = UserRepository(db.pool)
+        db_user = await repo.get_user_by_id(user_id)
+        if db_user:
+            return UserProfile(
+                id=db_user.id,
+                email=db_user.email,
+                full_name=db_user.full_name,
+                role=db_user.role.value,
+                organisation_id=db_user.organisation_id,
+                permissions=[p.value for p in db_user.permissions],
+            )
+    except Exception:
+        pass  # Fallback to JWT claims
+
     return UserProfile(
         id=payload["sub"],
-        email="",   # Fetch from DB if needed
+        email="",
         full_name="",
         role=payload["role"],
         organisation_id=payload["org"],
