@@ -1,0 +1,86 @@
+# NetworkPolicy — Default-deny all ingress, then selectively allow
+# This enforces micro-segmentation: workloads can only talk to declared peers.
+
+---
+# Deny ALL ingress by default in the ventro namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ventro
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# Allow: external traffic → frontend via ingress controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: ventro
+spec:
+  podSelector:
+    matchLabels:
+      app: ventro-frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+
+---
+# Allow: external traffic → backend API via ingress controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-backend
+  namespace: ventro
+spec:
+  podSelector:
+    matchLabels:
+      app: ventro-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+
+---
+# Allow: celery worker egress to Redis and backend (for webhook firing)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-celery-egress
+  namespace: ventro
+spec:
+  podSelector:
+    matchLabels:
+      app: ventro-celery
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ventro-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ventro-backend
+      ports:
+        - protocol: TCP
+          port: 8000
+    # DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53

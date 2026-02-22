@@ -7,6 +7,7 @@ import UploadPage from './pages/UploadPage'
 import ReconciliationPage from './pages/ReconciliationPage'
 import SessionsPage from './pages/SessionsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import AdminPage from './pages/AdminPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
@@ -51,6 +52,13 @@ function AppLayout() {
                     <Route path="/analytics" element={
                         <ProtectedRoute minimumRole="finance_director">
                             <AnalyticsPage />
+                        </ProtectedRoute>
+                    } />
+
+                    {/* ADMIN or MASTER — user management, webhooks, compliance */}
+                    <Route path="/admin" element={
+                        <ProtectedRoute minimumRole="admin">
+                            <AdminPage />
                         </ProtectedRoute>
                     } />
 

@@ -1,0 +1,35 @@
+---
+# Backend ClusterIP — internal communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: ventro-backend
+  namespace: ventro
+  labels:
+    app: ventro-backend
+spec:
+  selector:
+    app: ventro-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# Frontend service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ventro-frontend
+  namespace: ventro
+  labels:
+    app: ventro-frontend
+spec:
+  selector:
+    app: ventro-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: ClusterIP

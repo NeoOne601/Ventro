@@ -1,0 +1,208 @@
+---
+# Backend API Deployment — 3 replicas, HPA-managed
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ventro-backend
+  namespace: ventro
+  labels:
+    app: ventro-backend
+    tier: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ventro-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0          # Zero-downtime deploys
+  template:
+    metadata:
+      labels:
+        app: ventro-backend
+        tier: api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend
+          image: ghcr.io/neoone601/ventro/backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: ventro-config
+            - secretRef:
+                name: ventro-app-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/v1/analytics/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/analytics/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 5
+          volumeMounts:
+            - name: upload-tmp
+              mountPath: /tmp/ventro_uploads
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: upload-tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: ventro-backend
+                topologyKey: kubernetes.io/hostname
+
+---
+# Celery Worker Deployment — 2 replicas for reconciliation queue
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ventro-celery
+  namespace: ventro
+  labels:
+    app: ventro-celery
+    tier: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ventro-celery
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: ventro-celery
+        tier: worker
+    spec:
+      terminationGracePeriodSeconds: 120    # Allow in-flight jobs to finish
+      containers:
+        - name: celery
+          image: ghcr.io/neoone601/ventro/backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - src.infrastructure.jobs.celery_app.celery_app
+            - worker
+            - --loglevel=info
+            - --queues=reconciliation,celery
+            - --concurrency=2
+            - --max-tasks-per-child=100
+          envFrom:
+            - configMapRef:
+                name: ventro-config
+            - secretRef:
+                name: ventro-app-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - src.infrastructure.jobs.celery_app.celery_app
+                - inspect
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: upload-tmp
+              mountPath: /tmp/ventro_uploads
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: upload-tmp
+          emptyDir: {}
+
+---
+# Frontend Deployment — 2 replicas serving built static assets via nginx
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ventro-frontend
+  namespace: ventro
+  labels:
+    app: ventro-frontend
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ventro-frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ventro-frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/neoone601/ventro/frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: false    # nginx requires root briefly, then drops
+            allowPrivilegeEscalation: false

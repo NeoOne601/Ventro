@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ventro
+  labels:
+    app.kubernetes.io/name: ventro
+    app.kubernetes.io/managed-by: kustomize
+    environment: production

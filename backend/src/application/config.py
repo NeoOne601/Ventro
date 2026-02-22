@@ -155,6 +155,29 @@ class Settings(BaseSettings):
     # How long (seconds) a circuit-broken provider is skipped before retry
     llm_circuit_break_recovery_seconds: int = 60
 
+    # ─── Encryption at Rest ──────────────────────────────────────────────────
+    # 32-byte key as hex (64 chars). Generate: python -c "import secrets; print(secrets.token_hex(32))"
+    # In production: fetch from Vault/AWS. In dev: leave empty to skip encryption.
+    file_encryption_key: str = ""
+    encryption_enabled: bool = True   # Set False to disable in unit tests
+
+    # ─── Secrets Management ───────────────────────────────────────────────────
+    # "env" = read from env vars (default/dev)
+    # "vault" = HashiCorp Vault KV v2
+    # "aws" = AWS Secrets Manager
+    # "auto" = try Vault → AWS → env
+    secrets_provider: str = "env"
+    vault_addr: str = ""               # e.g. https://vault.acme.com:8200
+    vault_token: str = ""              # or use VAULT_ROLE_ID + VAULT_SECRET_ID
+    vault_secret_path: str = "secret/data/ventro/production"
+    aws_region: str = ""               # e.g. ap-south-1
+    aws_secret_name: str = "ventro/production"
+
+    # ─── Webhooks ─────────────────────────────────────────────────────────────
+    webhook_signing_key: str = ""      # HMAC-SHA256 signing key for outbound webhooks
+    webhook_max_retries: int = 3
+    webhook_timeout_seconds: float = 10.0
+
     @computed_field
     @property
     def is_production(self) -> bool:
@@ -164,6 +187,12 @@ class Settings(BaseSettings):
     @property
     def max_upload_size_bytes(self) -> int:
         return self.max_upload_size_mb * 1024 * 1024
+
+    @staticmethod
+    def generate_encryption_key() -> str:
+        """Print a new random 256-bit key. Run once during setup."""
+        import secrets as _secrets
+        return _secrets.token_hex(32)
 
 
 @lru_cache(maxsize=1)

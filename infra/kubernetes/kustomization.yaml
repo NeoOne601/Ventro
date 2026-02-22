@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ventro
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - externalsecret.yaml
+  - deployments.yaml
+  - services.yaml
+  - ingress.yaml
+  - hpa-pdb.yaml
+  - networkpolicy.yaml
+
+# Override image tags at deploy time:
+# kustomize edit set image ghcr.io/neoone601/ventro/backend=ghcr.io/neoone601/ventro/backend:v1.2.3
+images:
+  - name: ghcr.io/neoone601/ventro/backend
+    newTag: latest
+  - name: ghcr.io/neoone601/ventro/frontend
+    newTag: latest
+
+commonLabels:
+  app.kubernetes.io/part-of: ventro
+  app.kubernetes.io/managed-by: kustomize
+
+# Apply with:
+#   kubectl apply -k infra/kubernetes/
+# Override image tag in CI:
+#   kustomize edit set image ghcr.io/neoone601/ventro/backend:$TAG
+#   kubectl apply -k infra/kubernetes/
