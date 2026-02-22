@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse
 
 from .api.v1 import documents, reconciliation, analytics
 from .routes.auth_router import router as auth_router
+from .routes.admin_router import router as admin_router
+from .routes.samr_router import router as samr_router
 from .websocket.progress import router as ws_router
 from .dependencies import get_db, get_mongo, get_qdrant, get_publisher, get_llm
 from .middleware.rate_limit_middleware import RateLimitMiddleware
@@ -125,10 +127,12 @@ def create_app() -> FastAPI:
         return response
 
     # ─── Routers ─────────────────────────────────────────────────────────────
-    app.include_router(auth_router, prefix="/api/v1")
-    app.include_router(documents.router, prefix="/api/v1")
+    app.include_router(auth_router,      prefix="/api/v1")
+    app.include_router(documents.router,  prefix="/api/v1")
     app.include_router(reconciliation.router, prefix="/api/v1")
-    app.include_router(analytics.router, prefix="/api/v1")
+    app.include_router(analytics.router,  prefix="/api/v1")
+    app.include_router(admin_router,      prefix="/api/v1")   # /api/v1/admin/*
+    app.include_router(samr_router,       prefix="/api/v1")   # /api/v1/samr/*
     app.include_router(ws_router)
 
     # ─── Health Endpoints ─────────────────────────────────────────────────────

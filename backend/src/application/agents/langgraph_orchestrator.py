@@ -63,6 +63,7 @@ class AgentState(TypedDict):
     # SAMR
     samr_metrics: dict[str, Any] | None
     samr_alert_triggered: bool
+    org_id: str | None   # For adaptive SAMR threshold lookup
 
     # Workpaper
     workpaper: dict[str, Any] | None
@@ -109,7 +110,23 @@ class LangGraphOrchestrator:
         self.compliance_agent = ComplianceAgent(llm_client)
         self.reconciliation_agent = ReconciliationAgent(llm_client)
         self.drafting_agent = DraftingAgent(llm_client)
-        self.samr_agent = SAMRAgent(llm_client)
+
+        # Build AdaptiveThresholdService (lazy Redis + PG init)
+        try:
+            from ..infrastructure.samr.adaptive_threshold import AdaptiveThresholdService  # noqa: F401
+            _threshold_svc = AdaptiveThresholdService(
+                pool=None,        # pool injected lazily via get_settings() inside the service
+                redis_url=settings.redis_url,
+                global_prior=settings.samr_divergence_threshold,
+            )
+        except Exception:
+            _threshold_svc = None   # Graceful fallback to static threshold
+
+        self.samr_agent = SAMRAgent(
+            llm_client,
+            divergence_threshold=settings.samr_divergence_threshold,
+            threshold_svc=_threshold_svc,
+        )
 
         self.graph = self._build_graph()
 
@@ -312,7 +329,9 @@ class LangGraphOrchestrator:
             logger.error("drafting_failed", session_id=session_id, error=str(e))
             return {"errors": state.get("errors", []) + [f"Drafting: {e}"], "status": "completed"}
 
-    async def run_reconciliation(self, session: ReconciliationSession) -> AgentState:
+    async def run_reconciliation(
+        self, session: ReconciliationSession, org_id: str | None = None
+    ) -> AgentState:
         """Entry point: run the full reconciliation workflow for a session."""
         initial_state: AgentState = {
             "session_id": session.id,
@@ -333,6 +352,7 @@ class LangGraphOrchestrator:
             "reconciliation_verdict": None,
             "samr_metrics": None,
             "samr_alert_triggered": False,
+            "org_id": org_id,   # Injected for adaptive SAMR threshold
             "workpaper": None,
             "messages": [],
             "current_agent": "supervisor",

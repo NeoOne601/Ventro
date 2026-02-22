@@ -57,8 +57,10 @@ async def _run_reconciliation_background(
             progress_publisher=publisher,
         )
 
-        # Run the LangGraph state machine
-        final_state = await orchestrator.run_reconciliation(session)
+        # Run the LangGraph state machine (org_id flows into AdaptiveThresholdService)
+        final_state = await orchestrator.run_reconciliation(
+            session, org_id=str(session.organisation_id) if session.organisation_id else None
+        )
 
         # Persist results
         verdict = final_state.get("reconciliation_verdict") or {}
