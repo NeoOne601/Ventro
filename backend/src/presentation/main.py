@@ -18,7 +18,8 @@ from fastapi.responses import JSONResponse
 from .api.v1 import documents, reconciliation, analytics
 from .routes.auth_router import router as auth_router
 from .websocket.progress import router as ws_router
-from .dependencies import get_db, get_mongo, get_qdrant, get_publisher
+from .dependencies import get_db, get_mongo, get_qdrant, get_publisher, get_llm
+from .middleware.rate_limit_middleware import RateLimitMiddleware
 from ..application.config import get_settings
 from ..infrastructure.telemetry.otel_setup import setup_telemetry
 
@@ -82,6 +83,21 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+    # Configurable Rate Limiting (strategy, limits, CIDR whitelist all from settings)
+    app.add_middleware(
+        RateLimitMiddleware,
+        redis_url=settings.redis_url,
+        strategy=settings.rate_limit_strategy,
+        window_seconds=settings.rate_limit_window_seconds,
+        auth_limit=settings.rate_limit_auth_requests,
+        api_limit=settings.rate_limit_api_requests,
+        upload_limit=settings.rate_limit_upload_requests,
+        burst_multiplier=settings.rate_limit_burst_multiplier,
+        whitelist_cidrs=settings.rate_limit_whitelist_cidrs,
+        key_prefix=settings.rate_limit_redis_prefix,
+        enabled=settings.rate_limit_enabled,
+    )
 
     # Request ID + timing middleware
     import uuid
@@ -150,6 +166,47 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "healthy", "service": "Ventro", "version": settings.app_version,
                 "timestamp": datetime.utcnow().isoformat()}
+
+    # ─── Admin Endpoints ─────────────────────────────────────────────────────
+    @app.get("/admin/llm-status", tags=["Admin"], summary="LLM provider circuit breaker status")
+    async def llm_router_status():
+        """
+        Returns the health of each LLM provider in the fallback chain.
+        Circuit breaker state: CLOSED (healthy) | OPEN (tripped) | recovering...
+        Requires: AP_MANAGER+ (enforced via middleware in production).
+        """
+        try:
+            llm = get_llm()
+            from ..infrastructure.llm.llm_router import LLMRouter
+            if isinstance(llm, LLMRouter):
+                return {
+                    "strategy": "fallback_chain",
+                    "configured_chain": settings.llm_fallback_chain,
+                    "providers": llm.provider_status(),
+                    "timeout_seconds": settings.llm_provider_timeout_seconds,
+                    "circuit_break_after_failures": settings.llm_max_failures_before_circuit_break,
+                    "circuit_recovery_seconds": settings.llm_circuit_break_recovery_seconds,
+                }
+            return {"strategy": "single_provider", "provider": str(type(llm).__name__)}
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+    @app.get("/admin/rate-limit-config", tags=["Admin"], summary="Current rate limiting configuration")
+    async def rate_limit_config():
+        """Returns the active rate limiting configuration for admin inspection."""
+        return {
+            "enabled": settings.rate_limit_enabled,
+            "strategy": settings.rate_limit_strategy,
+            "window_seconds": settings.rate_limit_window_seconds,
+            "limits": {
+                "auth_requests": settings.rate_limit_auth_requests,
+                "api_requests": settings.rate_limit_api_requests,
+                "upload_requests": settings.rate_limit_upload_requests,
+            },
+            "burst_multiplier": settings.rate_limit_burst_multiplier,
+            "whitelist_cidrs": settings.rate_limit_whitelist_cidrs or "(none)",
+            "redis_prefix": settings.rate_limit_redis_prefix,
+        }
 
     return app
 

@@ -10,6 +10,15 @@ from typing import Literal
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Valid rate-limit strategy identifiers
+RateLimitStrategy = Literal[
+    "per_ip",          # One bucket per source IP (default, no auth needed)
+    "per_user",        # One bucket per authenticated user_id (requires JWT)
+    "per_org",         # One bucket per organisation_id (shared across all org users)
+    "per_ip_and_user", # Both IP and user buckets must have capacity (strictest)
+    "global",          # Single global counter — useful for dev/test
+]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -104,6 +113,47 @@ class Settings(BaseSettings):
     # Prometheus
     prometheus_enabled: bool = True
     metrics_port: int = 9090
+
+    # ─── Rate Limiting ───────────────────────────────────────────────────────
+    # Strategy the admin selects — controls HOW requests are bucketed
+    rate_limit_strategy: RateLimitStrategy = "per_ip"
+    # Sliding-window duration in seconds
+    rate_limit_window_seconds: int = 60
+
+    # Per-tier request limits (within the window above)
+    # Auth endpoints (login, register) — tightest to prevent credential stuffing
+    rate_limit_auth_requests: int = 10
+    # General API endpoints
+    rate_limit_api_requests: int = 120
+    # Document upload — expensive; kept low
+    rate_limit_upload_requests: int = 20
+
+    # Burst allowance: how many extra requests are tolerated in the first second
+    rate_limit_burst_multiplier: float = 1.5
+
+    # Comma-separated CIDR ranges exempt from all rate limiting
+    # e.g. "10.0.0.0/8,172.16.0.0/12" for internal services
+    rate_limit_whitelist_cidrs: str = ""
+
+    # Redis key prefix (allows multiple Ventro tenants sharing one Redis)
+    rate_limit_redis_prefix: str = "ventro:rl"
+
+    # Disable entirely (e.g. in test environments)
+    rate_limit_enabled: bool = True
+
+    # ─── LLM Fallback Chain ───────────────────────────────────────────────────
+    # Ordered list of LLM providers to try on failure.
+    # Valid values: "groq", "ollama", "rule_based"
+    # "rule_based" = minimal regex extractor — always available, last resort
+    llm_fallback_chain: list[str] = Field(
+        default=["groq", "ollama", "rule_based"]
+    )
+    # Timeout (seconds) before trying the next provider in the chain
+    llm_provider_timeout_seconds: float = 45.0
+    # Max consecutive failures before a provider is temporarily marked unhealthy
+    llm_max_failures_before_circuit_break: int = 3
+    # How long (seconds) a circuit-broken provider is skipped before retry
+    llm_circuit_break_recovery_seconds: int = 60
 
     @computed_field
     @property

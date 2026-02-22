@@ -68,27 +68,65 @@ def get_qdrant() -> QdrantAdapter:
 
 def get_llm() -> ILLMClient:
     """
-    Auto-selects LLM provider:
-      - If GROQ_API_KEY is set → GroqClient (free cloud inference)
-      - Otherwise             → OllamaClient (local self-hosted)
+    Build an LLMRouter backed by the admin-configured fallback chain.
+
+    Chain order from settings.llm_fallback_chain (default: groq → ollama → rule_based).
+    Each provider has an independent circuit breaker.  "rule_based" is appended
+    automatically if not already present — it must always be the final fallback.
     """
     global _llm
     if _llm is None:
         settings = get_settings()
-        if settings.groq_api_key:
-            from ..infrastructure.llm.groq_client import GroqClient
-            logger.info("llm_provider_selected", provider="groq", model=settings.groq_model)
-            _llm = GroqClient(
-                api_key=settings.groq_api_key,
-                model=settings.groq_model,
-            )
-        else:
-            from ..infrastructure.llm.ollama_client import OllamaClient
-            logger.info("llm_provider_selected", provider="ollama", model=settings.ollama_primary_model)
-            _llm = OllamaClient(
-                base_url=settings.ollama_base_url,
-                primary_model=settings.ollama_primary_model,
-            )
+        from ..infrastructure.llm.llm_router import LLMRouter, RuleBasedExtractor
+
+        chain_names: list[str] = list(settings.llm_fallback_chain)
+        # Guarantee rule_based is always reachable as the last resort
+        if "rule_based" not in chain_names:
+            chain_names.append("rule_based")
+
+        providers: list[tuple[str, ILLMClient]] = []
+        for name in chain_names:
+            try:
+                if name == "groq" and settings.groq_api_key:
+                    from ..infrastructure.llm.groq_client import GroqClient
+                    providers.append(("groq", GroqClient(
+                        api_key=settings.groq_api_key,
+                        model=settings.groq_model,
+                    )))
+                    logger.info("llm_chain_provider_added", provider="groq", model=settings.groq_model)
+
+                elif name == "groq" and not settings.groq_api_key:
+                    logger.info("llm_chain_provider_skipped", provider="groq", reason="no_api_key")
+
+                elif name == "ollama":
+                    from ..infrastructure.llm.ollama_client import OllamaClient
+                    providers.append(("ollama", OllamaClient(
+                        base_url=settings.ollama_base_url,
+                        primary_model=settings.ollama_primary_model,
+                    )))
+                    logger.info("llm_chain_provider_added", provider="ollama", model=settings.ollama_primary_model)
+
+                elif name == "rule_based":
+                    providers.append(("rule_based", RuleBasedExtractor()))
+                    logger.info("llm_chain_provider_added", provider="rule_based")
+
+                else:
+                    logger.warning("llm_chain_unknown_provider", name=name)
+
+            except Exception as exc:
+                logger.error("llm_chain_provider_init_failed", provider=name, error=str(exc))
+
+        if not providers:
+            # Absolute safety net — should never happen in a properly configured env
+            providers = [("rule_based", RuleBasedExtractor())]
+            logger.error("llm_chain_fallback_to_rule_based_only")
+
+        _llm = LLMRouter(
+            providers=providers,
+            timeout_seconds=settings.llm_provider_timeout_seconds,
+            max_failures=settings.llm_max_failures_before_circuit_break,
+            recovery_seconds=settings.llm_circuit_break_recovery_seconds,
+        )
     return _llm
 
 

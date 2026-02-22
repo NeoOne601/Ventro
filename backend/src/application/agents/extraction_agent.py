@@ -3,6 +3,7 @@ Extraction Agent - Bounding-Box Aware RAG with Cross-Encoder Reranking
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -10,6 +11,7 @@ import structlog
 from sentence_transformers import CrossEncoder
 
 from ...domain.interfaces import ILLMClient, IVectorStore
+from ...infrastructure.security.prompt_sanitizer import sanitize_document_text, sanitize_user_input
 
 logger = structlog.get_logger(__name__)
 
@@ -72,9 +74,32 @@ class ExtractionAgent:
             self._reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
         return self._reranker
 
-    async def _extract_from_text(self, text: str, doc_type: str) -> dict[str, Any]:
-        """Use LLM to extract structured data from document text."""
-        prompt = EXTRACTION_PROMPT_TEMPLATE.format(doc_type=doc_type, text=text[:8000])
+    async def _extract_from_text(
+        self, text: str, doc_type: str, doc_id: str = ""
+    ) -> dict[str, Any]:
+        """
+        Use LLM to extract structured data from document text.
+
+        Security: raw document text is sanitized before insertion into the
+        prompt template to prevent prompt injection attacks from malicious
+        PDF content (e.g. hidden instructions, delimiter injection, exfil attempts).
+        """
+        # ── Sanitize before building the prompt ───────────────────────────────
+        sanitized = sanitize_document_text(text, source=doc_type, doc_id=doc_id)
+        if sanitized.threats_found:
+            logger.warning(
+                "extraction_sanitization_threats",
+                doc_type=doc_type,
+                doc_id=doc_id,
+                threats=sanitized.threats_found,
+                modified=sanitized.was_modified,
+            )
+
+        # Build the prompt using only the sanitized text
+        prompt = EXTRACTION_PROMPT_TEMPLATE.format(
+            doc_type=doc_type,
+            text=sanitized.cleaned_text,
+        )
         response = await self.llm.complete(
             prompt=prompt,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
@@ -84,6 +109,14 @@ class ExtractionAgent:
         try:
             return json.loads(response)
         except json.JSONDecodeError:
+            import re
+            # Try to recover JSON from a markdown-wrapped response
+            match = re.search(r"\{.*\}", response, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except json.JSONDecodeError:
+                    pass
             logger.warning("extraction_json_parse_failed", doc_type=doc_type)
             return {"line_items": [], "document_totals": {}, "document_metadata": {}}
 
