@@ -147,23 +147,23 @@ services:
       - mas_vgfr_net
 
   # ─── Ollama (Local LLM) ────────────────────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: mas_vgfr_ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    networks:
-      - mas_vgfr_net
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
+  #  ollama:
+  #    image: ollama/ollama:latest
+  #    container_name: mas_vgfr_ollama
+  #    ports:
+  #      - "11434:11434"
+  #    volumes:
+  #      - ollama_data:/root/.ollama
+  #    restart: unless-stopped
+  #    networks:
+  #      - mas_vgfr_net
+  #    deploy:
+  #      resources:
+  #        reservations:
+  #          devices:
+  #            - driver: nvidia
+  #              count: all
+  #              capabilities: [ gpu ]
 
   # ─── Frontend ──────────────────────────────────────────────────────────────
   frontend:
