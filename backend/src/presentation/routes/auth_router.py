@@ -28,7 +28,7 @@ from ...infrastructure.auth.password_handler import (
     verify_password,
 )
 from ...infrastructure.database.user_repository import UserRepository
-from ..dependencies import get_db
+from ..dependencies import PgPoolDep
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -45,6 +45,15 @@ class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    expires_in: int = 3600
+    user_id: str
+    role: str
+    full_name: str
+
+
+class TokenExchangeResponse(BaseModel):
+    access_token: str
+    refresh_token: str
     expires_in: int = 3600
     user_id: str
     role: str
@@ -70,13 +79,13 @@ class UserProfile(BaseModel):
 async def register(
     body: RegisterRequest,
     request: Request,
-    db=Depends(get_db),
+    pool: PgPoolDep,
 ) -> dict:
     """
     Register a new user under an existing organisation.
     The organisation must already exist (created by admin or onboarding flow).
     """
-    repo = UserRepository(db.pool)
+    repo = UserRepository(pool)
 
     # Validate password strength
     ok, reason = password_strength_ok(body.password)
@@ -119,14 +128,14 @@ async def register(
 async def login(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    db=Depends(get_db),
+    pool: PgPoolDep,
 ) -> LoginResponse:
     """
     Authenticate with email + password.
     Returns JWT access token (1h) + refresh token (7d).
     org_slug is passed in the `client_id` field of OAuth2 form.
     """
-    repo = UserRepository(db.pool)
+    repo = UserRepository(pool)
 
     org_slug = form_data.client_id or "dev"
     org = await repo.get_org_by_slug(org_slug)
@@ -169,14 +178,14 @@ async def login(
     )
 
 
-@router.post("/refresh", response_model=LoginResponse)
+@router.post("/refresh", response_model=TokenExchangeResponse)
 async def refresh_token(
     body: RefreshRequest,
     request: Request,
-    db=Depends(get_db),
-) -> LoginResponse:
-    """Rotate refresh token — revokes the old one and issues a new pair."""
-    repo = UserRepository(db.pool)
+    pool: PgPoolDep,
+) -> TokenExchangeResponse:
+    """Exchange valid refresh token for new access+refresh pair."""
+    repo = UserRepository(pool)
     token_hash = hash_refresh_token(body.refresh_token)
     record = await repo.get_refresh_token(token_hash)
 
@@ -197,7 +206,7 @@ async def refresh_token(
                                    user_agent=request.headers.get("user-agent"),
                                    ip_address=request.client.host if request.client else None)
 
-    return LoginResponse(
+    return TokenExchangeResponse(
         access_token=access_token,
         refresh_token=raw_refresh,
         user_id=user.id,
@@ -207,12 +216,12 @@ async def refresh_token(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, body: RefreshRequest, db=Depends(get_db)) -> None:
+async def logout(request: Request, body: RefreshRequest, pool: PgPoolDep) -> None:
     """
     Revoke both the refresh token (DB) and the current access token (Redis denylist).
     After this call, the access token is invalid immediately — no waiting for expiry.
     """
-    repo = UserRepository(db.pool)
+    repo = UserRepository(pool)
     # Revoke refresh token in PostgreSQL
     await repo.revoke_refresh_token(hash_refresh_token(body.refresh_token))
 
@@ -234,7 +243,7 @@ async def logout(request: Request, body: RefreshRequest, db=Depends(get_db)) -> 
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_all_devices(
     request: Request,
-    db=Depends(get_db),
+    pool: PgPoolDep,
 ) -> None:
     """
     Invalidate ALL active sessions for the current user (logout all devices).
@@ -255,14 +264,25 @@ async def logout_all_devices(
         # Mark all tokens issued before now as globally revoked
         await denylist.revoke_all_for_user(user_id, float(exp))
         # Also revoke all DB refresh tokens
-        repo = UserRepository(db.pool)
+        repo = UserRepository(pool)
         await repo.revoke_all_refresh_tokens(user_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/token", include_in_schema=False)
+async def oauth2_token(
+        request: Request,
+        pool: PgPoolDep,
+) -> TokenExchangeResponse:
+    try:
+        repo = UserRepository(pool)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Database connection error")
+
+
 @router.get("/me", response_model=UserProfile)
-async def get_me(request: Request, db=Depends(get_db)) -> UserProfile:
+async def get_me(request: Request, pool: PgPoolDep) -> UserProfile:
     """Get current user profile — pulls full data from DB for accurate name/email."""
     token = _extract_bearer(request)
     payload = verify_access_token(token)
@@ -270,7 +290,7 @@ async def get_me(request: Request, db=Depends(get_db)) -> UserProfile:
 
     # Pull from DB for accurate name, email, is_active
     try:
-        repo = UserRepository(db.pool)
+        repo = UserRepository(pool)
         db_user = await repo.get_user_by_id(user_id)
         if db_user:
             return UserProfile(

@@ -51,14 +51,21 @@ class GroqClient(ILLMClient):
     async def complete(
         self,
         prompt: str,
+        system_prompt: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 2048,
         json_mode: bool = False,
+        **kwargs,
     ) -> str:
         """Send a prompt to Groq and return the completion text."""
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
         request_body: dict = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }

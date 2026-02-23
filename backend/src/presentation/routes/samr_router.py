@@ -14,9 +14,9 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from ..dependencies import UserDep
+from ..middleware.auth_middleware import CurrentUser
 from ...application.config import get_settings
-from ...infrastructure.database.postgres_adapter import PostgresAdapter
+import asyncpg
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/samr", tags=["SAMR"])
@@ -32,8 +32,9 @@ async def _get_svc() -> "AdaptiveThresholdService":  # noqa: F821
     global _threshold_svc
     if _threshold_svc is None:
         from ...infrastructure.samr.adaptive_threshold import AdaptiveThresholdService
-        from ...infrastructure.database.postgres_adapter import PostgresAdapter
-        pool = await PostgresAdapter.get_pool(settings.database_url)
+        import asyncpg
+        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        pool = await asyncpg.create_pool(dsn)
         _threshold_svc = AdaptiveThresholdService(
             pool=pool,
             redis_url=settings.redis_url,
@@ -58,7 +59,7 @@ class FeedbackRequest(BaseModel):
 @router.post("/feedback", status_code=status.HTTP_204_NO_CONTENT)
 async def submit_samr_feedback(
     body: FeedbackRequest,
-    current_user: UserDep,
+    current_user: CurrentUser,
 ) -> None:
     """
     Record analyst feedback on a SAMR verdict.
@@ -68,21 +69,18 @@ async def submit_samr_feedback(
 
     Invalidates the org's Redis-cached threshold so the next session recomputes.
     """
-    from ...infrastructure.database.postgres_adapter import PostgresAdapter
-
-    svc = await _get_svc()
-
-    # Look up SAMR metrics from the session to get cosine_score + threshold
     try:
-        pool = await PostgresAdapter.get_pool(settings.database_url)
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT samr_cosine_score, samr_threshold_used, samr_alert_triggered
-                FROM reconciliation_sessions WHERE id = $1::uuid AND organisation_id = $2::uuid
-                """,
-                body.session_id, str(current_user.organisation_id),
-            )
+        import asyncpg
+        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        conn = await asyncpg.connect(dsn)
+        row = await conn.fetchrow(
+            """
+            SELECT samr_cosine_score, samr_threshold_used, samr_alert_triggered
+            FROM reconciliation_sessions WHERE id = $1::uuid AND organisation_id = $2::uuid
+            """,
+            body.session_id, str(current_user.organisation_id),
+        )
+        await conn.close()
     except Exception:
         row = None
 
@@ -102,7 +100,7 @@ async def submit_samr_feedback(
 
 
 @router.get("/threshold")
-async def get_threshold(current_user: UserDep) -> dict:
+async def get_threshold(current_user: CurrentUser) -> dict:
     """Current adaptive threshold for the caller's organisation."""
     svc = await _get_svc()
     threshold = await svc.get_threshold(str(current_user.organisation_id))
@@ -118,7 +116,7 @@ async def get_threshold(current_user: UserDep) -> dict:
 
 
 @router.get("/analytics")
-async def get_samr_analytics(current_user: UserDep) -> dict:
+async def get_samr_analytics(current_user: CurrentUser) -> dict:
     """30-day feedback trend: TP/FP/FN counts and per-day breakdown."""
     svc = await _get_svc()
     return await svc.get_analytics(str(current_user.organisation_id))

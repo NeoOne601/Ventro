@@ -12,12 +12,13 @@ from typing import Optional
 import aiofiles
 import structlog
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+import io
 
-from ..dependencies import DBDep, DocProcessorDep, EmbedderDep, MongoDep, QdrantDep
-from ..schemas import DocumentInfoResponse, DocumentUploadResponse
-from ...application.config import get_settings
-from ...domain.entities import DocumentType
+from ...dependencies import DBDep, DocProcessorDep, EmbedderDep, MongoDep, QdrantDep
+from ...schemas import DocumentInfoResponse, DocumentUploadResponse
+from src.application.config import get_settings
+from src.domain.entities import DocumentType
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -141,6 +142,51 @@ async def get_document(document_id: str, db: DBDep = None) -> DocumentInfoRespon
     )
 
 
+@router.get("/{document_id}/page/{page_number}")
+async def get_document_page_image(
+    document_id: str,
+    page_number: int,
+    db: DBDep = None,
+) -> StreamingResponse:
+    """Stream a specific page of a document as a PNG image for interactive citations."""
+    import pdf2image
+    from pathlib import Path
+
+    metadata = await db.get_by_id(document_id)
+    if not metadata:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    ext = ALLOWED_TYPES.get(metadata.document_type.value, "pdf")
+    file_path = Path(settings.temp_upload_dir) / f"{document_id}.{ext}"
+
+    if not file_path.exists():
+        # Fallback to .pdf if the extension lookup failed or the file was saved simply as .pdf
+        file_path = Path(settings.temp_upload_dir) / f"{document_id}.pdf"
+        if not file_path.exists():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file not found on disk")
+
+    try:
+        # pdf2image pages are 1-indexed, but our bounding box coords are often 0-indexed in page references.
+        # Assuming the UI requests page 0 for the first page.
+        images = pdf2image.convert_from_path(
+            str(file_path),
+            dpi=150,
+            first_page=page_number + 1,
+            last_page=page_number + 1
+        )
+        if not images:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found in document")
+        
+        img_byte_arr = io.BytesIO()
+        images[0].save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        
+        return StreamingResponse(img_byte_arr, media_type="image/png")
+    except Exception as e:
+        logger.error("page_render_failed", doc_id=document_id, page=page_number, error=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to render page image")
+
+
 @router.get("/{document_id}/parsed")
 async def get_parsed_document(document_id: str, mongo: MongoDep = None) -> JSONResponse:
     """Retrieve full parsed document data including line items and bounding boxes."""
@@ -217,7 +263,7 @@ async def bulk_upload_documents(
         )
 
     from celery import chord as celery_chord
-    from ...infrastructure.jobs.batch_tasks import (
+    from src.infrastructure.jobs.batch_tasks import (
         process_document_in_batch,
         batch_match_and_dispatch,
     )

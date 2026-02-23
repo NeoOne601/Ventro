@@ -76,8 +76,8 @@ class Settings(BaseSettings):
 
     # Embeddings — multilingual-e5-large supports 100+ languages (1024 dims)
     # For English-only deployments: use all-MiniLM-L6-v2 (384 dims, faster)
-    embedding_model: str = "intfloat/multilingual-e5-large-instruct"
-    embedding_dimension: int = 1024
+    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_dimension: int = 384
 
     # OCR
     ocr_language: str = "eng+ara+hin+chi_sim+jpn+kor+rus"  # Broad multilingual default

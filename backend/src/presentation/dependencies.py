@@ -19,11 +19,13 @@ from ..infrastructure.llm.embedding_model import SentenceTransformerEmbedding
 from ..infrastructure.vector_store.qdrant_adapter import QdrantAdapter
 from ..infrastructure.cache.progress_publisher import InMemoryProgressPublisher
 
+import asyncpg
 import structlog
 logger = structlog.get_logger(__name__)
 
 # Singletons
 _pg: PostgreSQLAdapter | None = None
+_pg_pool: asyncpg.Pool | None = None
 _mongo: MongoDBAdapter | None = None
 _qdrant: QdrantAdapter | None = None
 _llm: ILLMClient | None = None
@@ -38,6 +40,15 @@ def get_db() -> PostgreSQLAdapter:
         settings = get_settings()
         _pg = PostgreSQLAdapter(settings.database_url)
     return _pg
+
+
+async def get_pg_pool() -> asyncpg.Pool:
+    global _pg_pool
+    if _pg_pool is None:
+        settings = get_settings()
+        dsn = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        _pg_pool = await asyncpg.create_pool(dsn)
+    return _pg_pool
 
 
 def get_mongo() -> MongoDBAdapter:
@@ -175,6 +186,7 @@ def get_doc_processor() -> DocumentProcessor:
 
 # FastAPI dependency type aliases
 DBDep = Annotated[PostgreSQLAdapter, Depends(get_db)]
+PgPoolDep = Annotated[asyncpg.Pool, Depends(get_pg_pool)]
 MongoDep = Annotated[MongoDBAdapter, Depends(get_mongo)]
 QdrantDep = Annotated[QdrantAdapter, Depends(get_qdrant)]
 LLMDep = Annotated[ILLMClient, Depends(get_llm)]

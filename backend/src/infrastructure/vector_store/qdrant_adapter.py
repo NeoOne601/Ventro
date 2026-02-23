@@ -28,18 +28,25 @@ class QdrantAdapter(IVectorStore):
         self,
         host: str = "localhost",
         port: int = 6333,
+        url: str | None = None,
+        api_key: str | None = None,
         collection_name: str = "mas_vgfr_docs",
         embedding_dim: int = 384,
     ) -> None:
         self.host = host
         self.port = port
+        self.url = url
+        self.api_key = api_key
         self.collection_name = collection_name
         self.embedding_dim = embedding_dim
         self._client: AsyncQdrantClient | None = None
 
     async def _get_client(self) -> AsyncQdrantClient:
         if self._client is None:
-            self._client = AsyncQdrantClient(host=self.host, port=self.port)
+            if self.url and self.api_key:
+                self._client = AsyncQdrantClient(url=self.url, api_key=self.api_key)
+            else:
+                self._client = AsyncQdrantClient(host=self.host, port=self.port)
         return self._client
 
     async def ensure_collection(self, collection_name: str | None = None) -> None:
@@ -136,9 +143,9 @@ class QdrantAdapter(IVectorStore):
             if conditions:
                 qdrant_filter = qmodels.Filter(must=conditions)
 
-        results = await client.search(
+        response = await client.query_points(
             collection_name=collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=qdrant_filter,
             limit=top_k,
             with_payload=True,
@@ -147,7 +154,7 @@ class QdrantAdapter(IVectorStore):
 
         return [
             {"id": str(r.id), "score": r.score, "payload": r.payload or {}}
-            for r in results
+            for r in response.points
         ]
 
     async def hybrid_search(

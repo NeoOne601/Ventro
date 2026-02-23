@@ -113,7 +113,7 @@ class PostgreSQLAdapter(IDocumentRepository, IReconciliationRepository):
         )
 
     def _orm_to_session(self, orm: ReconciliationSessionORM) -> ReconciliationSession:
-        return ReconciliationSession(
+        session = ReconciliationSession(
             id=orm.id,
             po_document_id=orm.po_document_id,
             grn_document_id=orm.grn_document_id,
@@ -125,6 +125,21 @@ class PostgreSQLAdapter(IDocumentRepository, IReconciliationRepository):
             error_message=orm.error_message,
             created_by=orm.created_by,
         )
+        if getattr(orm, 'verdict_json', None):
+            try:
+                from src.domain.entities import ReconciliationVerdict
+                v = ReconciliationVerdict(
+                    session_id=session.id,
+                    po_document_id=session.po_document_id,
+                    grn_document_id=session.grn_document_id,
+                    invoice_document_id=session.invoice_document_id,
+                    status=session.status
+                )
+                v.__dict__.update(orm.verdict_json)
+                session.verdict = v
+            except Exception:
+                pass
+        return session
 
     # ---- IDocumentRepository ----
 

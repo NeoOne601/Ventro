@@ -67,6 +67,7 @@ dependencies = [
 
     # Data Validation
     "pydantic>=2.8.0",
+    "email-validator>=2.1.0",
     "pydantic-settings>=2.4.0",
 
     # Synthetic Data Generation
@@ -84,7 +85,8 @@ dependencies = [
 
     # Security & Auth
     "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
+    "passlib>=1.7.4",
+    "bcrypt==3.2.2",
 
     # Utilities
     "python-dotenv>=1.0.0",

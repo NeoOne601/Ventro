@@ -61,6 +61,7 @@ class ReconciliationResultResponse(BaseModel):
     agent_trace: list[dict[str, Any]] = []
     completed_at: Optional[datetime] = None
     errors: list[str] = []
+    classification_errors: list[str] = []
 
 
 class AnalyticsResponse(BaseModel):

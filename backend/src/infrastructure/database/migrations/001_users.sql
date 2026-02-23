@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
     hashed_password     TEXT NOT NULL,
     role                VARCHAR(50) NOT NULL DEFAULT 'ap_analyst'
                             CHECK (role IN ('external_auditor','ap_analyst','ap_manager',
-                                            'finance_director','admin')),
+                                            'finance_director','admin','developer','master')),
     is_active           BOOLEAN NOT NULL DEFAULT TRUE,
     is_verified         BOOLEAN NOT NULL DEFAULT FALSE,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),

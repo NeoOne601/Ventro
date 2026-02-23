@@ -249,6 +249,7 @@ class ReconciliationVerdict:
     overall_confidence: float = 0.0
     discrepancy_summary: list[str] = field(default_factory=list)
     recommendation: str = ""
+    classification_errors: list[str] = field(default_factory=list)
     completed_at: datetime = field(default_factory=datetime.utcnow)
 
 

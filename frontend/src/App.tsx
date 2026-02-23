@@ -12,6 +12,7 @@ import BulkUploadPage from './pages/BulkUploadPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
+import DocumentViewerPage from './pages/DocumentViewerPage'
 
 function AppLayout() {
     const { isAuthenticated } = useAuth()
@@ -96,6 +97,11 @@ export default function App() {
         <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/document/:docId/page/:page" element={
+                <ProtectedRoute minimumRole="ap_analyst">
+                    <DocumentViewerPage />
+                </ProtectedRoute>
+            } />
             <Route
                 path="/*"
                 element={

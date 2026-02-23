@@ -9,8 +9,8 @@ from typing import Any
 import structlog
 from fastapi import APIRouter
 
-from ..dependencies import DBDep, QdrantDep
-from ..schemas import AnalyticsResponse
+from ...dependencies import DBDep, QdrantDep
+from ...schemas import AnalyticsResponse
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 @router.get("/metrics", response_model=AnalyticsResponse)
 async def get_metrics(db: DBDep = None, qdrant: QdrantDep = None) -> AnalyticsResponse:
     """Get system-wide performance and quality metrics."""
-    from ...application.config import get_settings
+    from src.application.config import get_settings
     settings = get_settings()
 
     sessions = await db.list_sessions(limit=1000)
@@ -74,9 +74,9 @@ async def detailed_health(
     qdrant: QdrantDep = None,
 ) -> dict[str, Any]:
     """Detailed health check of all subsystems."""
-    from ...application.config import get_settings
+    from src.application.config import get_settings
     settings = get_settings()
-    from ..dependencies import get_ollama
+    from ...dependencies import get_ollama
     ollama = get_ollama()
 
     services: dict[str, str] = {}

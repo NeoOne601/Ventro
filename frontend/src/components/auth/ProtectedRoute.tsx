@@ -12,7 +12,7 @@
  *   <ProtectedRoute permission="finding:override"> // specific permission
  */
 import { Navigate, useLocation } from 'react-router-dom'
-import { useAuth, type Permission, type Role } from '../contexts/AuthContext'
+import { useAuth, type Permission, type Role } from '../../contexts/AuthContext'
 
 interface ProtectedRouteProps {
     children: React.ReactNode

@@ -13,15 +13,15 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, StreamingResponse
 
-from ..middleware.auth_middleware import AnalystOrAbove, CurrentUser
-from ..dependencies import DBDep, MongoDep, OllamaDep, PublisherDep, QdrantDep, EmbedderDep
-from ..schemas import (
+from ...middleware.auth_middleware import AnalystOrAbove, CurrentUser
+from ...dependencies import DBDep, MongoDep, LLMDep, PublisherDep, QdrantDep, EmbedderDep, PgPoolDep
+from ...schemas import (
     CreateSessionRequest,
     ReconciliationResultResponse,
     SessionResponse,
 )
-from ...application.agents.langgraph_orchestrator import LangGraphOrchestrator
-from ...domain.entities import ReconciliationSession, ReconciliationStatus
+from src.application.agents.langgraph_orchestrator import LangGraphOrchestrator
+from src.domain.entities import ReconciliationSession, ReconciliationStatus
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/reconciliation", tags=["Reconciliation"])
@@ -32,9 +32,10 @@ async def _run_reconciliation_background(
     db: DBDep,
     mongo: MongoDep,
     qdrant: QdrantDep,
-    ollama: OllamaDep,
+    llm: LLMDep,
     embedder: EmbedderDep,
     publisher: PublisherDep,
+    org_id: str | None = None,
 ) -> None:
     """Background task: run the full multi-agent reconciliation workflow."""
     try:
@@ -50,7 +51,7 @@ async def _run_reconciliation_background(
 
         # Build orchestrator
         orchestrator = LangGraphOrchestrator(
-            llm_client=ollama,
+            llm_client=llm,
             vector_store=qdrant,
             document_store=mongo,
             reconciliation_repo=db,
@@ -59,7 +60,7 @@ async def _run_reconciliation_background(
 
         # Run the LangGraph state machine (org_id flows into AdaptiveThresholdService)
         final_state = await orchestrator.run_reconciliation(
-            session, org_id=str(session.organisation_id) if session.organisation_id else None
+            session, org_id=org_id
         )
 
         # Persist results
@@ -78,13 +79,28 @@ async def _run_reconciliation_background(
         session.status = status_map.get(overall_status, ReconciliationStatus.COMPLETED)
         if final_state.get("samr_alert_triggered"):
             session.status = ReconciliationStatus.SAMR_ALERT
+
+        from src.domain.entities import ReconciliationVerdict
+        session.verdict = ReconciliationVerdict(
+            session_id=session.id,
+            po_document_id=session.po_document_id,
+            grn_document_id=session.grn_document_id,
+            invoice_document_id=session.invoice_document_id,
+            status=session.status,
+            overall_confidence=verdict.get("confidence", 0.0),
+            discrepancy_summary=verdict.get("discrepancy_summary", []),
+            recommendation=verdict.get("recommendation", ""),
+            line_item_matches=final_state.get("line_item_matches") or verdict.get("line_item_matches", []),
+            classification_errors=final_state.get("classification_errors", [])
+        )
+
         session.completed_at = datetime.utcnow()
         session.agent_trace = final_state.get("agent_trace", [])
         await db.update_session(session)
 
         # Save workpaper to MongoDB
         if workpaper_data:
-            from ...domain.entities import AuditWorkpaper, WorkpaperSection
+            from src.domain.entities import AuditWorkpaper, WorkpaperSection
             wp = AuditWorkpaper(
                 id=workpaper_data.get("id", ""),
                 session_id=session_id,
@@ -114,6 +130,7 @@ async def create_session(
     request: Request,
     body: CreateSessionRequest,
     current_user: AnalystOrAbove,
+    pool: PgPoolDep,
     db: DBDep = None,
 ) -> SessionResponse:
     """
@@ -134,15 +151,14 @@ async def create_session(
         po_document_id=body.po_document_id,
         grn_document_id=body.grn_document_id,
         invoice_document_id=body.invoice_document_id,
-        organisation_id=current_user.organisation_id,   # Multi-tenant scoping
         created_by=current_user.id,
     )
     created = await db.create_session(session)
     logger.info("session_created", session_id=session.id, org=current_user.organisation_id)
 
     # Audit log
-    from ...infrastructure.database.user_repository import UserRepository
-    repo = UserRepository(db.pool)
+    from src.infrastructure.database.user_repository import UserRepository
+    repo = UserRepository(pool)
     await repo.append_audit_log(
         action="session.created",
         user_id=current_user.id,
@@ -169,9 +185,10 @@ async def run_reconciliation(
     background_tasks: BackgroundTasks,
     current_user: AnalystOrAbove,
     db: DBDep = None,
+    pool: PgPoolDep = None,
     mongo: MongoDep = None,
     qdrant: QdrantDep = None,
-    ollama: OllamaDep = None,
+    llm: LLMDep = None,
     embedder: EmbedderDep = None,
     publisher: PublisherDep = None,
 ) -> dict[str, str]:
@@ -193,12 +210,12 @@ async def run_reconciliation(
 
     background_tasks.add_task(
         _run_reconciliation_background,
-        session_id, db, mongo, qdrant, ollama, embedder, publisher,
+        session_id, db, mongo, qdrant, llm, embedder, publisher, current_user.organisation_id,
     )
 
     # Audit log
-    from ...infrastructure.database.user_repository import UserRepository
-    repo = UserRepository(db.pool)
+    from src.infrastructure.database.user_repository import UserRepository
+    repo = UserRepository(pool)
     await repo.append_audit_log(
         action="session.run_triggered",
         user_id=current_user.id,
@@ -269,6 +286,8 @@ async def get_reconciliation_result(
         samr_metrics=samr,
         agent_trace=session.agent_trace or [],
         completed_at=session.completed_at,
+        classification_errors=session.verdict.classification_errors if session.verdict and session.verdict.classification_errors else [],
+        errors=[]
     )
 
 
@@ -296,7 +315,7 @@ async def export_workpaper_pdf(
     Export the audit workpaper as a signed PDF.
     Requires permission: workpaper:export (AP Manager or higher).
     """
-    from ...domain.auth_entities import Permission
+    from src.domain.auth_entities import Permission
     if not current_user.has_permission(Permission.WORKPAPER_EXPORT):
         raise HTTPException(status_code=403, detail="workpaper:export permission required")
 

@@ -251,10 +251,14 @@ def _build_workpaper_html(
 <script>
 window.openCitation = function(el) {{
   const docId = el.dataset.docId;
-  const page = parseInt(el.dataset.page);
-  const bbox = {{ x0: parseFloat(el.dataset.x0), y0: parseFloat(el.dataset.y0),
-                   x1: parseFloat(el.dataset.x1), y1: parseFloat(el.dataset.y1) }};
-  window.parent.postMessage({{ type: 'CITATION_CLICK', docId, page, bbox }}, '*');
+  const page = parseInt(el.dataset.page) || 0;
+  const x0 = parseFloat(el.dataset.x0) || 0;
+  const y0 = parseFloat(el.dataset.y0) || 0;
+  const x1 = parseFloat(el.dataset.x1) || 0;
+  const y1 = parseFloat(el.dataset.y1) || 0;
+  const baseUrl = window.parent ? window.parent.location.origin : '';
+  const url = baseUrl + '/document/' + docId + '/page/' + page + '?x0=' + x0 + '&y0=' + y0 + '&x1=' + x1 + '&y1=' + y1;
+  window.open(url, '_blank', 'noopener,noreferrer');
 }};
 </script>
 </body>

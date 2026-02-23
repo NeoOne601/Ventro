@@ -42,8 +42,8 @@ export default function ReconciliationPage() {
         queryKey: ['session-status', sessionId],
         queryFn: () => api.getSessionStatus(sessionId!),
         enabled: !!sessionId,
-        refetchInterval: (data) =>
-            data && ['completed', 'matched', 'failed', 'discrepancy_found', 'samr_alert'].includes(data.status)
+        refetchInterval: (query) =>
+            query.state.data && ['completed', 'matched', 'failed', 'discrepancy_found', 'samr_alert'].includes(query.state.data.status)
                 ? false
                 : 3000,
     })
@@ -246,6 +246,25 @@ export default function ReconciliationPage() {
                                 )}
                             </div>
 
+                            {/* Classification Validation Errors */}
+                            {result?.classification_errors?.length > 0 && (
+                                <div className="glass-card" style={{ marginBottom: 'var(--space-lg)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)' }}>
+                                    <h3 style={{ marginBottom: '0.75rem', color: '#fca5a5', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Shield size={18} /> Document Validation Failed
+                                    </h3>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                                        The system detected that the uploaded documents do not match their intended slots. Please verify your files and try again.
+                                    </p>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {result.classification_errors.map((err: string, idx: number) => (
+                                            <div key={idx} style={{ padding: '0.5rem 0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', borderLeft: '3px solid #f87171', fontSize: '0.85rem', color: '#fef2f2' }}>
+                                                {err}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* SAMR Metrics */}
                             {result?.samr_metrics && (
                                 <div className="glass-card" style={{ marginBottom: 'var(--space-lg)' }}>
@@ -320,7 +339,21 @@ export default function ReconciliationPage() {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <iframe
-                                srcDoc={workpaper.html_content}
+                                srcDoc={workpaper.html_content.replace(
+                                    /<script>[\s\S]*?window\.openCitation[\s\S]*?<\/script>/g,
+                                    `<script>
+                                    window.openCitation = function(el) {
+                                        const docId = el.dataset.docId;
+                                        const page = parseInt(el.dataset.page) || 0;
+                                        const x0 = parseFloat(el.dataset.x0) || 0;
+                                        const y0 = parseFloat(el.dataset.y0) || 0;
+                                        const x1 = parseFloat(el.dataset.x1) || 0;
+                                        const y1 = parseFloat(el.dataset.y1) || 0;
+                                        const url = (window.parent ? window.parent.location.origin : '') + '/document/' + docId + '/page/' + page + '?x0=' + x0 + '&y0=' + y0 + '&x1=' + x1 + '&y1=' + y1;
+                                        window.open(url, '_blank', 'noopener,noreferrer');
+                                    };
+                                    </script>`
+                                )}
                                 style={{ width: '100%', height: '100%', border: 'none', background: '#0a0a1a' }}
                                 title="Audit Workpaper"
                             />
@@ -328,6 +361,8 @@ export default function ReconciliationPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+
         </div>
     )
 }

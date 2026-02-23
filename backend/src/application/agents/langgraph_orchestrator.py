@@ -73,6 +73,7 @@ class AgentState(TypedDict):
     current_agent: str
     agent_trace: list[dict[str, Any]]
     errors: list[str]
+    classification_errors: list[str]  # Dedicated field for immediate pre-validation feedback
     status: str
     iteration_count: int
 
@@ -104,7 +105,9 @@ class LangGraphOrchestrator:
         from .reconciliation_agent import ReconciliationAgent
         from .drafting_agent import DraftingAgent
         from .samr_agent import SAMRAgent
+        from .classification_agent import ClassificationAgent
 
+        self.classification_agent = ClassificationAgent(llm_client, vector_store)
         self.extraction_agent = ExtractionAgent(llm_client, vector_store)
         self.quantitative_agent = QuantitativeAgent(llm_client)
         self.compliance_agent = ComplianceAgent(llm_client)
@@ -136,6 +139,7 @@ class LangGraphOrchestrator:
 
         # Add agent nodes
         workflow.add_node("supervisor", self._supervisor_node)
+        workflow.add_node("classification", self._classification_node)
         workflow.add_node("extraction", self._extraction_node)
         workflow.add_node("quantitative", self._quantitative_node)
         workflow.add_node("compliance", self._compliance_node)
@@ -151,6 +155,7 @@ class LangGraphOrchestrator:
             "supervisor",
             self._supervisor_router,
             {
+                "classification": "classification",
                 "extraction": "extraction",
                 "quantitative": "quantitative",
                 "compliance": "compliance",
@@ -162,6 +167,7 @@ class LangGraphOrchestrator:
         )
 
         # Sequential flow with supervisor checkpoints
+        workflow.add_edge("classification", "supervisor")
         workflow.add_edge("extraction", "supervisor")
         workflow.add_edge("quantitative", "supervisor")
         workflow.add_edge("compliance", "supervisor")
@@ -181,11 +187,18 @@ class LangGraphOrchestrator:
             logger.warning("max_iterations_reached", session_id=state["session_id"])
             return "end"
 
+        # Check for pre-validation failures immediately
+        if "classification_errors" in state and len(state.get("classification_errors", [])) > 0:
+            logger.warning("supervisor_halting_due_to_classification_fail", session_id=state["session_id"])
+            return "end"
+
         # Check for fatal errors
         if len(state.get("errors", [])) > 3:
             return "end"
 
         if status == "initialized":
+            return "classification"
+        elif status == "classified":
             return "extraction"
         elif status == "extracted":
             return "quantitative"
@@ -224,6 +237,39 @@ class LangGraphOrchestrator:
             }],
         }
 
+    async def _classification_node(self, state: AgentState) -> dict[str, Any]:
+        """Run the Pre-Validation Classification Agent."""
+        session_id = state["session_id"]
+        logger.info("classification_agent_start", session_id=session_id)
+
+        await self.progress.publish(session_id, {
+            "event": "agent_started",
+            "agent": "classification",
+            "message": "Validating document structures and semantics...",
+        })
+
+        try:
+            result = await self.classification_agent.run(state)
+            errors = result.get("classification_errors", [])
+            
+            if errors:
+                await self.progress.publish(session_id, {
+                    "event": "agent_failed",
+                    "agent": "classification",
+                    "error": "Document Validation Failed: " + " | ".join(errors),
+                })
+            else:
+                await self.progress.publish(session_id, {
+                    "event": "agent_completed",
+                    "agent": "classification",
+                    "message": "All documents structurally validated.",
+                })
+            
+            return {**result, "status": "classified"}
+        except Exception as e:
+            logger.error("classification_failed", session_id=session_id, error=str(e))
+            return {"errors": state.get("errors", []) + [f"Classification: {e}"], "status": "classified"}
+
     async def _extraction_node(self, state: AgentState) -> dict[str, Any]:
         """Run the Extraction Agent."""
         session_id = state["session_id"]
@@ -257,6 +303,7 @@ class LangGraphOrchestrator:
 
         try:
             result = await self.quantitative_agent.run(state)
+            await self.progress.publish(session_id, {"event": "agent_completed", "agent": "quantitative"})
             return {**result, "status": "quantified"}
         except Exception as e:
             logger.error("quantitative_failed", session_id=session_id, error=str(e))
@@ -269,6 +316,7 @@ class LangGraphOrchestrator:
                                                   "message": "Evaluating regulatory compliance..."})
         try:
             result = await self.compliance_agent.run(state)
+            await self.progress.publish(session_id, {"event": "agent_completed", "agent": "compliance"})
             return {**result, "status": "compliance_checked"}
         except Exception as e:
             logger.error("compliance_failed", session_id=session_id, error=str(e))
@@ -290,6 +338,7 @@ class LangGraphOrchestrator:
                     "metrics": result.get("samr_metrics"),
                 })
 
+            await self.progress.publish(session_id, {"event": "agent_completed", "agent": "samr"})
             return {**result, "status": "samr_complete"}
         except Exception as e:
             logger.error("samr_failed", session_id=session_id, error=str(e))
@@ -320,6 +369,7 @@ class LangGraphOrchestrator:
                                                   "message": "Generating audit workpaper..."})
         try:
             result = await self.drafting_agent.run(state)
+            await self.progress.publish(session_id, {"event": "agent_completed", "agent": "drafting"})
             await self.progress.publish(session_id, {
                 "event": "workflow_complete",
                 "message": "✅ Reconciliation complete. Workpaper generated.",
@@ -358,6 +408,7 @@ class LangGraphOrchestrator:
             "current_agent": "supervisor",
             "agent_trace": [],
             "errors": [],
+            "classification_errors": [],
             "status": "initialized",
             "iteration_count": 0,
         }
