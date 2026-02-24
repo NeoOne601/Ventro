@@ -123,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState({ user: null, accessToken: null, isAuthenticated: false, isLoading: false })
         setRefreshToken(null)
         localStorage.removeItem('ventro_refresh_token')
+        localStorage.removeItem('ventro_access_token')
     }, [])
 
     const scheduleTokenRefresh = useCallback((accessToken: string, storedRefresh: string) => {
@@ -166,6 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState({ user, accessToken: access, isAuthenticated: true, isLoading: false })
         setRefreshToken(refresh)
         localStorage.setItem('ventro_refresh_token', refresh)
+        localStorage.setItem('ventro_access_token', access)
         scheduleTokenRefresh(access, refresh)
     }, [scheduleTokenRefresh])
 
@@ -265,8 +267,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         })
 
         const storedRefresh = localStorage.getItem('ventro_refresh_token')
+        const storedAccess = localStorage.getItem('ventro_access_token')
+
+        if (storedAccess && storedRefresh) {
+            try {
+                const payload = JSON.parse(atob(storedAccess.split('.')[1]))
+                const expiresIn = payload.exp * 1000 - Date.now() - 60_000
+                if (expiresIn > 0) {
+                    setAuthFromTokens(storedAccess, storedRefresh).catch(() => silentRefresh(storedRefresh))
+                    return
+                }
+            } catch {
+                // Ignore parse errors, fall through to refresh
+            }
+        }
+
         if (storedRefresh) {
-            silentRefresh(storedRefresh)
+            // Apply slight random jitter to prevent concurrent refresh thunder herds across tabs
+            const jitter = Math.floor(Math.random() * 500)
+            setTimeout(() => silentRefresh(storedRefresh), jitter)
         } else {
             setState(s => ({ ...s, isLoading: false }))
         }

@@ -16,12 +16,12 @@ from ...infrastructure.security.prompt_sanitizer import sanitize_document_text
 
 logger = structlog.get_logger(__name__)
 
-CLASSIFICATION_SYSTEM_PROMPT = """You are a strict financial document validator.
-Your sole purpose is to quickly examine a text snippet and determine if it belongs to the expected document class.
-You must respond with valid JSON containing a boolean "is_valid" and a string "rationale".
-Do NOT hallucinate. Do NOT be lenient."""
+CLASSIFICATION_SYSTEM_PROMPT = """You are a financial document validator.
+Your purpose is to quickly examine a text snippet and determine if it appears to belong to the expected document class.
+Because you are only seeing a partial snippet of the document (often just the header or first few items), you should be lenient. As long as there are strong indicators or titles matching the expected type, consider it valid even if other standard elements are missing.
+You must respond with valid JSON containing a boolean "is_valid" and a string "rationale"."""
 
-CLASSIFICATION_PROMPT_TEMPLATE = """Validate whether the following document text snippet is structurally and semantically a {doc_type}.
+CLASSIFICATION_PROMPT_TEMPLATE = """Determine if the following text snippet is from a {doc_type}.
 
 Text Snippet:
 {text}
@@ -29,7 +29,7 @@ Text Snippet:
 Return JSON with this exact schema:
 {{
   "is_valid": true_or_false,
-  "rationale": "One precise sentence explaining why it is or isn't a {doc_type}."
+  "rationale": "One brief sentence explaining why it appears to be or not be a {doc_type}."
 }}
 """
 
@@ -44,15 +44,22 @@ class ClassificationAgent:
     async def _fetch_first_chunk(self, document_id: str, collection_name: str = "mas_vgfr_docs") -> str:
         """Fetch essentially the first page/snippet of the document for cheap classification."""
         try:
-            # We don't need semantic search here, just grab any chunk belonging to the doc
-            # to see the header/initial text. We do a dummy search vector [0.1]*dim
-            dummy_vector = [0.1] * 768  # Assuming Nomic-embed-text dim
-            results = await self.vector_store.search(
-                query_vector=dummy_vector,
-                collection_name=collection_name,
-                filters={"document_id": document_id},
-                top_k=3,
-            )
+            if hasattr(self.vector_store, "get_by_filter"):
+                results = await self.vector_store.get_by_filter(
+                    collection_name=collection_name,
+                    filters={"document_id": document_id},
+                    limit=3,
+                )
+            else:
+                # We don't need semantic search here, just grab any chunk belonging to the doc
+                # to see the header/initial text. We do a dummy search vector [0.1]*dim
+                dummy_vector = [0.1] * 768  # Assuming Nomic-embed-text dim
+                results = await self.vector_store.search(
+                    query_vector=dummy_vector,
+                    collection_name=collection_name,
+                    filters={"document_id": document_id},
+                    top_k=3,
+                )
             if not results:
                 return ""
             

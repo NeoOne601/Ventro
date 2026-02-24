@@ -19,10 +19,17 @@ const AGENT_STEPS = [
 ]
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+    // API Enum Statuses
+    matched: { label: 'Full Match', color: '#86efac', bg: 'rgba(34,197,94,0.12)', icon: <CheckCircle size={18} /> },
+    discrepancy_found: { label: 'Discrepancy Found', color: '#fde047', bg: 'rgba(234,179,8,0.12)', icon: <AlertTriangle size={18} /> },
+    samr_alert: { label: 'SAMR Alert', color: '#fca5a5', bg: 'rgba(239,68,68,0.12)', icon: <AlertTriangle size={18} /> },
+    failed: { label: 'Failed', color: '#fca5a5', bg: 'rgba(239,68,68,0.12)', icon: <AlertTriangle size={18} /> },
+    exception: { label: 'Exception', color: '#d8b4fe', bg: 'rgba(168,85,247,0.12)', icon: <AlertTriangle size={18} /> },
+    // Verdict string statuses
     full_match: { label: 'Full Match', color: '#86efac', bg: 'rgba(34,197,94,0.12)', icon: <CheckCircle size={18} /> },
     partial_match: { label: 'Partial Match', color: '#fde047', bg: 'rgba(234,179,8,0.12)', icon: <AlertTriangle size={18} /> },
     mismatch: { label: 'Mismatch', color: '#fca5a5', bg: 'rgba(239,68,68,0.12)', icon: <AlertTriangle size={18} /> },
-    exception: { label: 'Exception', color: '#d8b4fe', bg: 'rgba(168,85,247,0.12)', icon: <AlertTriangle size={18} /> },
+    // Default flow statuses
     processing: { label: 'Processing', color: '#67e8f9', bg: 'rgba(6,182,212,0.12)', icon: <Cpu size={18} className="animate-spin" /> },
     pending: { label: 'Pending', color: '#93c5fd', bg: 'rgba(59,130,246,0.1)', icon: <Clock size={18} /> },
 }
@@ -48,11 +55,18 @@ export default function ReconciliationPage() {
                 : 3000,
     })
 
-    const { data: result } = useQuery({
+    const { data: result, refetch: refetchResult } = useQuery({
         queryKey: ['session-result', sessionId],
         queryFn: () => api.getSessionResult(sessionId!),
-        enabled: !!sessionId && !!session && !['pending', 'processing'].includes(session?.status),
+        enabled: !!sessionId,
     })
+
+    // Safety fallback: if polling detects completion but websocket missed it, refetch result
+    useEffect(() => {
+        if (session && ['completed', 'matched', 'failed', 'discrepancy_found', 'samr_alert'].includes(session.status)) {
+            refetchResult()
+        }
+    }, [session?.status, refetchResult])
 
     // WebSocket for progress events
     useEffect(() => {
@@ -73,15 +87,48 @@ export default function ReconciliationPage() {
             }
             if (event.event === 'workflow_complete') {
                 refetch()
+                refetchResult()
             }
         })
         wsRef.current = ws
         return () => { ws.close(); wsRef.current = null }
     }, [sessionId])
 
+    // Rehydrate missed events and step completions from backend DB trace
+    useEffect(() => {
+        if (result?.agent_trace) {
+            const mapped = new Set<string>()
+            const checkpoints = result.agent_trace.map((t: any) => t.checkpoint)
+
+            if (checkpoints.includes('classified')) mapped.add('classification')
+            if (checkpoints.includes('extracted')) mapped.add('extraction')
+            if (checkpoints.includes('quantified')) mapped.add('quantitative')
+            if (checkpoints.includes('compliance_checked')) mapped.add('compliance')
+            if (checkpoints.includes('samr_complete')) mapped.add('samr')
+            if (checkpoints.includes('reconciled')) mapped.add('reconciliation')
+            if (checkpoints.includes('completed')) mapped.add('drafting')
+
+            setCompletedAgents(prev => {
+                const n = new Set(prev)
+                mapped.forEach(a => n.add(a))
+                return n
+            })
+
+            // Populate event history if empty
+            if (events.length === 0) {
+                const history = result.agent_trace.map((t: any, idx: number) => ({
+                    timestamp: t.timestamp,
+                    event: 'supervisor_checkpoint',
+                    message: t.checkpoint
+                }))
+                setEvents(history)
+            }
+        }
+    }, [result?.agent_trace])
+
     const verdict = result?.verdict
     const workpaper = result?.workpaper
-    const statusKey = verdict?.overall_status || session?.status || 'pending'
+    const statusKey = verdict?.status || session?.status || 'pending'
     const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.pending
 
     return (

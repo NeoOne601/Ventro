@@ -304,3 +304,4 @@ class ReconciliationSession:
     agent_trace: list[dict[str, Any]] = field(default_factory=list)
     error_message: str | None = None
     created_by: str = "system"
+    organisation_id: str | None = None

@@ -62,6 +62,7 @@ class ReconciliationSessionORM(Base):
     agent_trace_json = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
     created_by = Column(String, default="system")
+    organisation_id = Column(String, nullable=True, index=True)
 
 
 class SAMRMetricsORM(Base):
@@ -124,6 +125,7 @@ class PostgreSQLAdapter(IDocumentRepository, IReconciliationRepository):
             completed_at=orm.completed_at,
             error_message=orm.error_message,
             created_by=orm.created_by,
+            organisation_id=orm.organisation_id,
         )
         if getattr(orm, 'verdict_json', None):
             try:
@@ -139,6 +141,10 @@ class PostgreSQLAdapter(IDocumentRepository, IReconciliationRepository):
                 session.verdict = v
             except Exception:
                 pass
+        
+        if getattr(orm, 'agent_trace_json', None):
+            session.agent_trace = orm.agent_trace_json
+
         return session
 
     # ---- IDocumentRepository ----
@@ -208,6 +214,7 @@ class PostgreSQLAdapter(IDocumentRepository, IReconciliationRepository):
                 status=session.status.value,
                 created_at=session.created_at,
                 created_by=session.created_by,
+                organisation_id=session.organisation_id,
             )
             db.add(orm)
             await db.commit()
@@ -234,14 +241,19 @@ class PostgreSQLAdapter(IDocumentRepository, IReconciliationRepository):
                 orm.error_message = session.error_message
                 if session.verdict:
                     orm.verdict_json = json.loads(json.dumps(session.verdict.__dict__, default=str))
+                if session.agent_trace:
+                    orm.agent_trace_json = session.agent_trace
                 await db.commit()
         return session
 
-    async def list_sessions(self, limit: int = 50, offset: int = 0) -> list[ReconciliationSession]:
+    async def list_sessions(self, limit: int = 50, offset: int = 0, org_id: str | None = None) -> list[ReconciliationSession]:
         async with self.async_session() as db:
+            query = select(ReconciliationSessionORM)
+            if org_id:
+                query = query.where(ReconciliationSessionORM.organisation_id == org_id)
+            
             result = await db.execute(
-                select(ReconciliationSessionORM)
-                .order_by(ReconciliationSessionORM.created_at.desc())
+                query.order_by(ReconciliationSessionORM.created_at.desc())
                 .limit(limit)
                 .offset(offset)
             )

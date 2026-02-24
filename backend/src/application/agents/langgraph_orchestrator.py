@@ -173,7 +173,7 @@ class LangGraphOrchestrator:
         workflow.add_edge("compliance", "supervisor")
         workflow.add_edge("samr", "supervisor")
         workflow.add_edge("reconciliation", "supervisor")
-        workflow.add_edge("drafting", END)
+        workflow.add_edge("drafting", "supervisor")
 
         return workflow.compile()
 
@@ -210,6 +210,8 @@ class LangGraphOrchestrator:
             return "reconciliation"
         elif status == "reconciled":
             return "drafting"
+        elif status == "completed":
+            return "end"
         else:
             return "end"
 

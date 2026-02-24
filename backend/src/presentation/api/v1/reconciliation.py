@@ -152,6 +152,7 @@ async def create_session(
         grn_document_id=body.grn_document_id,
         invoice_document_id=body.invoice_document_id,
         created_by=current_user.id,
+        organisation_id=current_user.organisation_id,
     )
     created = await db.create_session(session)
     logger.info("session_created", session_id=session.id, org=current_user.organisation_id)

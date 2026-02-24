@@ -585,6 +585,7 @@ class DocumentProcessor:
         # Chunk by text blocks (each block becomes a chunk, merged if too small)
         current_chunk_text = ""
         current_chunk_bbox: dict[str, float] | None = None
+        current_chunk_fragments: list[dict[str, Any]] = []
         current_page = 0
 
         for fragment in parsed_doc.text_fragments:
@@ -602,14 +603,19 @@ class DocumentProcessor:
                         "document_type": parsed_doc.metadata.document_type.value,
                         "page": current_page,
                         "bbox": current_chunk_bbox,
+                        "fragments": current_chunk_fragments,
                         "chunk_type": "text_block",
                     },
                 })
                 current_chunk_text = text + " "
                 current_chunk_bbox = fragment.bbox.to_dict() if fragment.bbox else None
+                current_chunk_fragments = [{"text": text, "bbox": current_chunk_bbox}] if current_chunk_bbox else []
                 current_page = fragment.bbox.page if fragment.bbox else 0
             else:
                 current_chunk_text += text + " "
+                frag_dict = fragment.bbox.to_dict() if fragment.bbox else None
+                if frag_dict:
+                    current_chunk_fragments.append({"text": text, "bbox": frag_dict})
                 if current_chunk_bbox is None and fragment.bbox:
                     current_chunk_bbox = fragment.bbox.to_dict()
                     current_page = fragment.bbox.page
@@ -624,6 +630,7 @@ class DocumentProcessor:
                     "document_type": parsed_doc.metadata.document_type.value,
                     "page": current_page,
                     "bbox": current_chunk_bbox,
+                    "fragments": current_chunk_fragments,
                     "chunk_type": "text_block",
                 },
             })

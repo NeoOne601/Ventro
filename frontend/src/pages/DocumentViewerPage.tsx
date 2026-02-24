@@ -67,11 +67,11 @@ export default function DocumentViewerPage() {
             </div>
 
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '2rem', overflow: 'auto' }} className="print-container">
-                <div style={{ position: 'relative', width: '100%', maxWidth: '900px', backgroundColor: 'white', aspectRatio: '1/1.4', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+                <div style={{ position: 'relative', width: '100%', maxWidth: '900px', backgroundColor: 'white', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
                     <img
                         src={imageUrl}
                         alt={`Page ${page}`}
-                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        style={{ width: '100%', height: 'auto', display: 'block' }}
                         crossOrigin="anonymous"
                         onLoad={(e) => {
                             const img = e.target as HTMLImageElement
@@ -83,13 +83,13 @@ export default function DocumentViewerPage() {
                     {(imageLoaded && x1 > x0 && y1 > y0) && (
                         <div style={{
                             position: 'absolute',
-                            left: `${(x0 / imgWidth) * 100}%`,
-                            top: `${(y0 / imgHeight) * 100}%`,
-                            width: `${((x1 - x0) / imgWidth) * 100}%`,
-                            height: `${((y1 - y0) / imgHeight) * 100}%`,
-                            border: '3px solid #67e8f9',
-                            backgroundColor: 'rgba(103,232,249,0.3)',
-                            boxShadow: '0 0 15px rgba(103,232,249,0.6)',
+                            left: `${x0 * 100}%`,
+                            top: `${y0 * 100}%`,
+                            width: `${(x1 - x0) * 100}%`,
+                            height: `${(y1 - y0) * 100}%`,
+                            border: '3px solid #ef4444',
+                            backgroundColor: 'rgba(239,68,68,0.3)',
+                            boxShadow: '0 0 15px rgba(239,68,68,0.6)',
                             pointerEvents: 'none'
                         }} />
                     )}

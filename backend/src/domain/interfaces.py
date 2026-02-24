@@ -74,7 +74,7 @@ class IReconciliationRepository(ABC):
         ...
 
     @abstractmethod
-    async def list_sessions(self, limit: int = 50, offset: int = 0) -> list[ReconciliationSession]:
+    async def list_sessions(self, limit: int = 50, offset: int = 0, org_id: str | None = None) -> list[ReconciliationSession]:
         ...
 
     @abstractmethod
@@ -104,6 +104,15 @@ class IVectorStore(ABC):
         collection_name: str,
         filters: dict[str, Any] | None = None,
         top_k: int = 10,
+    ) -> list[dict[str, Any]]:
+        ...
+
+    @abstractmethod
+    async def get_by_filter(
+        self,
+        collection_name: str,
+        filters: dict[str, Any],
+        limit: int = 10,
     ) -> list[dict[str, Any]]:
         ...
 

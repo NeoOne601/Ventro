@@ -190,11 +190,24 @@ class ExtractionAgent:
 
                 # Attach bounding box citations from retrieved chunks
                 citations = []
+                import re
                 for item in line_items:
+                    desc_norm = re.sub(r'\s+', ' ', str(item.get("description", ""))).strip().lower()
+                    if len(desc_norm) < 3:  # Skip trivial matches
+                        continue
                     for chunk in chunks:
                         payload = chunk.get("payload", {})
-                        if item.get("raw_text", "") and item["raw_text"][:30] in payload.get("text", ""):
-                            item["bbox"] = payload.get("bbox")
+                        chunk_text_norm = re.sub(r'\s+', ' ', str(payload.get("text", ""))).strip().lower()
+                        if desc_norm in chunk_text_norm:
+                            
+                            best_bbox = payload.get("bbox")
+                            for frag in payload.get("fragments", []):
+                                frag_text_norm = re.sub(r'\s+', ' ', str(frag.get("text", ""))).strip().lower()
+                                if len(frag_text_norm) > 2 and (desc_norm in frag_text_norm or frag_text_norm in desc_norm):
+                                    best_bbox = frag.get("bbox") or best_bbox
+                                    break
+
+                            item["bbox"] = best_bbox
                             item["page"] = payload.get("page", 0)
                             item["document_id"] = doc_id
                             citations.append({
@@ -202,7 +215,7 @@ class ExtractionAgent:
                                 "document_type": doc_type,
                                 "text": item.get("description", ""),
                                 "value": str(item.get("total_amount", "")),
-                                "bbox": payload.get("bbox"),
+                                "bbox": best_bbox,
                                 "page": payload.get("page", 0),
                             })
                             break

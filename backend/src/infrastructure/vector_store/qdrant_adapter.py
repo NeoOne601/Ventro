@@ -156,6 +156,41 @@ class QdrantAdapter(IVectorStore):
             {"id": str(r.id), "score": r.score, "payload": r.payload or {}}
             for r in response.points
         ]
+    async def get_by_filter(
+        self,
+        collection_name: str,
+        filters: dict[str, Any],
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Fetch records by metadata filter without dense vector similarity."""
+        await self.ensure_collection(collection_name)
+        client = await self._get_client()
+
+        qdrant_filter = None
+        if filters:
+            conditions = [
+                qmodels.FieldCondition(
+                    key=k,
+                    match=qmodels.MatchValue(value=v),
+                )
+                for k, v in filters.items()
+                if v is not None
+            ]
+            if conditions:
+                qdrant_filter = qmodels.Filter(must=conditions)
+
+        response, _ = await client.scroll(
+            collection_name=collection_name,
+            scroll_filter=qdrant_filter,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        return [
+            {"id": str(r.id), "payload": r.payload or {}}
+            for r in response
+        ]
 
     async def hybrid_search(
         self,
