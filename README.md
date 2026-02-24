@@ -11,9 +11,13 @@
 
 ## What Is Ventro?
 
-Ventro automates the most time-consuming step in accounts payable: **three-way matching** — confirming that a Purchase Order (PO), Goods Receipt Note (GRN), and Supplier Invoice all agree before approving payment.
+**Ventro** is a Visual GenAI Financial Reconciliation System engineered to automate and secure the complex 3-way match process in accounts payable. Built as a sophisticated Multi-Agent System (MAS), Ventro replaces rigid, template-dependent OCR pipelines with intelligent, deterministic AI agents capable of understanding unstructured financial documents at scale.
 
-Where traditional software fails on template changes, multilingual documents, or partial deliveries, Ventro uses a coordinated system of AI agents that read and reason across all three documents simultaneously — the same way a senior auditor would, but in seconds rather than hours.
+At its core, Ventro ingests Purchase Orders, Goods Receipt Notes, and Invoices, running them through a customized LangGraph orchestrated state machine. 4 specialized AI agents (Classification, Extraction, Quantitative Validation, and Compliance) work in isolation to extract line items, calculate mathematical consistency, and perform fuzzy semantic entity resolution across varying vendor nomenclature. To eliminate LLM hallucinations, the platform enforces a strict Deterministic Isolation framework, requiring the AI to mathematically defend its extracted 3-way values against a unified Cartesian truth array before granting a final reconciliation verdict.
+
+A defining feature of Ventro is its high-precision Retrieval-Augmented Generation (RAG) architecture. Utilizing a custom PyMuPDF chunking algorithm and a Qdrant vector database, Ventro embeds micro-fragment spatial coordinates (bounding boxes) alongside semantic vectors. This allows the system's generated audit workpapers to provide a fully Interactive Evidence Map acting as an infallible audit trail that flawlessly links AI conclusions back to the exact (x,y) pixel coordinates on the original source document.
+
+The distributed backend is powered by Python, FastAPI, PostgreSQL, and asynchronous Celery workers, seamlessly handling bulk concurrent uploads via Redis message brokering. Real-time workflow telemetry is streamed to a dynamic React/TypeScript frontend via WebSockets, providing multi-tenant users with live, granular progress updates. Protected by organizational JWT isolation and cross-tab token synchronization, Ventro is a scalable, resilient, and fully automated financial auditor designed for the modern enterprise.
 
 ### Who Is It For?
 
