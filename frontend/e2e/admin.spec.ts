@@ -6,7 +6,6 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Admin Console', () => {
     test('Admin page redirects unauthenticated users to login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/admin')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
@@ -15,7 +14,7 @@ test.describe('Admin Console', () => {
         await page.goto('/login')
         await page.click('text=Create an account')
         await expect(page).toHaveURL('/register')
-        await page.click('text=Already have an account')
+        await page.click('text=Sign in')
         await expect(page).toHaveURL('/login')
     })
 
@@ -30,7 +29,6 @@ test.describe('Admin Console', () => {
 
     test('Admin page URL guard after clearing storage', async ({ page }) => {
         // Navigate to admin, expect either login redirect or admin content — no 500 error
-        await page.evaluate(() => localStorage.clear())
         const res = await page.goto('/admin')
         const url = page.url()
         // Should redirect to login — not crash
@@ -47,7 +45,6 @@ test.describe('Admin Console', () => {
     })
 
     test('Admin orgs tab not visible to unauthenticated users (guard)', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/admin')
         // Should redirect — never show admin content
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })

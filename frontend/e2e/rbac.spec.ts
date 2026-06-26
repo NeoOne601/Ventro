@@ -5,19 +5,16 @@ import { test, expect } from '@playwright/test'
 
 test.describe('RBAC Route Guards', () => {
     test('Unauthenticated access to / redirects to /login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
 
     test('Unauthenticated access to /admin redirects to /login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/admin')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
 
     test('Unauthenticated access to /bulk redirects to /login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/bulk')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })

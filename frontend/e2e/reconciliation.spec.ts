@@ -5,19 +5,16 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Reconciliation', () => {
     test('Unauthenticated /upload redirects to login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/upload')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
 
     test('Unauthenticated /reconciliation redirects to login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/reconciliation')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
 
     test('Unauthenticated /sessions redirects to login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/sessions')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
@@ -29,7 +26,6 @@ test.describe('Reconciliation', () => {
     })
 
     test('Sessions page — no undefined or NaN rendered after route guard', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/sessions')
         // Should redirect to login — body must not show raw errors
         await page.waitForURL(/\/login/, { timeout: 8000 })

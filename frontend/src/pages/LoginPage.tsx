@@ -3,7 +3,7 @@
  * Premium glassmorphism design with org slug, animated state, and error handling.
  */
 import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import '../styles/auth.css'
 
@@ -158,6 +158,10 @@ export default function LoginPage() {
                         'Admin', 'Developer', 'Master'].map(role => (
                             <span key={role} className="auth-role-badge">{role}</span>
                         ))}
+                </div>
+
+                <div className="rg-signin-link" style={{ marginTop: '2rem' }}>
+                    Don't have an account? <Link to="/register">Create an account</Link>
                 </div>
             </div>
         </div>

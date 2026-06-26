@@ -6,17 +6,12 @@ import { test, expect } from '@playwright/test'
 
 test.describe('Bulk Upload', () => {
     test('Unauthenticated /bulk redirects to login', async ({ page }) => {
-        await page.evaluate(() => localStorage.clear())
         await page.goto('/bulk')
         await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
     })
 
     test('Bulk upload page — route guard is enforced', async ({ page }) => {
         // Without auth tokens, /bulk must never render its content
-        await page.evaluate(() => {
-            localStorage.clear()
-            sessionStorage.clear()
-        })
         await page.goto('/bulk')
         // Must redirect to login
         const url = page.url()

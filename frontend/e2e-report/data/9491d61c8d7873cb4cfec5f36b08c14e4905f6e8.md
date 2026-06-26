@@ -1,0 +1,54 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - img
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e7]
+        - generic [ref=e10]: Ventro
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]: "1"
+          - generic [ref=e14]: Organisation
+        - generic [ref=e16]:
+          - generic [ref=e17]: "2"
+          - generic [ref=e18]: Your Details
+    - heading "Join your workspace" [level=1] [ref=e19]
+    - paragraph [ref=e20]: Enter your organisation's unique identifier
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]: Organisation slug
+        - generic [ref=e24]:
+          - generic: ventro.io/
+          - textbox "Organisation slug" [ref=e25]:
+            - /placeholder: acme-corp
+        - generic [ref=e26]: Ask your Administrator for your organisation's slug
+      - generic [ref=e27]:
+        - generic [ref=e28]:
+          - generic [ref=e29]: 👨‍💼
+          - generic [ref=e30]:
+            - generic [ref=e31]: Ap Analyst
+            - generic [ref=e32]: Upload documents, create and run reconciliations
+        - generic [ref=e33]:
+          - generic [ref=e34]: 🧑‍💼
+          - generic [ref=e35]:
+            - generic [ref=e36]: Ap Manager
+            - generic [ref=e37]: Approve findings, sign workpapers, manage sessions
+        - generic [ref=e38]:
+          - generic [ref=e39]: 📊
+          - generic [ref=e40]:
+            - generic [ref=e41]: Finance Director
+            - generic [ref=e42]: Full analytics, audit log, billing overview
+        - generic [ref=e43]:
+          - generic [ref=e44]: 🔍
+          - generic [ref=e45]:
+            - generic [ref=e46]: External Auditor
+            - generic [ref=e47]: Read-only access to sessions and workpapers
+      - button "Continue →" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]:
+      - text: Already have an account?
+      - link "Sign in" [ref=e50] [cursor=pointer]:
+        - /url: /login
+```
