@@ -11,8 +11,8 @@ class TestDocumentClassification:
     """Test keyword-based document type classification."""
 
     def test_classifies_purchase_order(self):
-        from backend.src.infrastructure.cv.document_processor import _classify_document
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _classify_document
+        from src.domain.entities import DocumentType
         doc_type, conf = _classify_document(
             "PURCHASE ORDER\nPO Number: 12345\nVendor: Acme Corp\nBuyer: XYZ Inc\nShip to: Warehouse A"
         )
@@ -20,8 +20,8 @@ class TestDocumentClassification:
         assert conf > 0.3
 
     def test_classifies_invoice(self):
-        from backend.src.infrastructure.cv.document_processor import _classify_document
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _classify_document
+        from src.domain.entities import DocumentType
         doc_type, conf = _classify_document(
             "TAX INVOICE\nInvoice Number: INV-2024-001\nBill To: XYZ Inc\nAmount Due: $1500\nPayment Due: 30 days"
         )
@@ -29,8 +29,8 @@ class TestDocumentClassification:
         assert conf > 0.3
 
     def test_classifies_grn(self):
-        from backend.src.infrastructure.cv.document_processor import _classify_document
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _classify_document
+        from src.domain.entities import DocumentType
         doc_type, conf = _classify_document(
             "GOODS RECEIPT NOTE\nGRN Number: GRN-001\nReceived at Warehouse\nGoods received from supplier"
         )
@@ -38,8 +38,8 @@ class TestDocumentClassification:
         assert conf > 0.3
 
     def test_unknown_for_blank(self):
-        from backend.src.infrastructure.cv.document_processor import _classify_document
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _classify_document
+        from src.domain.entities import DocumentType
         doc_type, conf = _classify_document("")
         assert doc_type == DocumentType.UNKNOWN
         assert conf == 0.0
@@ -49,8 +49,8 @@ class TestTableParsing:
     """Test line item extraction from table rows."""
 
     def test_parse_table_to_line_items(self):
-        from backend.src.infrastructure.cv.document_processor import _parse_table_to_line_items
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _parse_table_to_line_items
+        from src.domain.entities import DocumentType
 
         table = {
             "rows": [
@@ -69,8 +69,8 @@ class TestTableParsing:
         assert items[0]["total_amount"] == 500.0
 
     def test_skips_empty_rows(self):
-        from backend.src.infrastructure.cv.document_processor import _parse_table_to_line_items
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _parse_table_to_line_items
+        from src.domain.entities import DocumentType
 
         table = {
             "rows": [
@@ -84,8 +84,8 @@ class TestTableParsing:
         assert len(items) == 1
 
     def test_handles_short_table(self):
-        from backend.src.infrastructure.cv.document_processor import _parse_table_to_line_items
-        from backend.src.domain.entities import DocumentType
+        from src.infrastructure.cv.document_processor import _parse_table_to_line_items
+        from src.domain.entities import DocumentType
         table = {"rows": [["Header"]], "bbox": None, "page": 0}
         items = _parse_table_to_line_items(table, "doc-789", DocumentType.INVOICE)
         assert items == []
@@ -95,7 +95,7 @@ class TestBoundingBoxNormalization:
     """Test bounding box coordinate normalization."""
 
     def test_bbox_within_unit_range(self):
-        from backend.src.domain.entities import BoundingBox
+        from src.domain.entities import BoundingBox
         bbox = BoundingBox(x0=0.1, y0=0.2, x1=0.8, y1=0.9, page=0)
         assert 0 <= bbox.x0 <= 1
         assert 0 <= bbox.y0 <= 1
@@ -105,7 +105,7 @@ class TestBoundingBoxNormalization:
         assert bbox.y1 > bbox.y0
 
     def test_bbox_to_dict(self):
-        from backend.src.domain.entities import BoundingBox
+        from src.domain.entities import BoundingBox
         bbox = BoundingBox(x0=0.1, y0=0.2, x1=0.8, y1=0.9, page=1)
         d = bbox.to_dict()
         assert d["x0"] == 0.1

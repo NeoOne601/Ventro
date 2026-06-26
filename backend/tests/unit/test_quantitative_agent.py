@@ -109,7 +109,7 @@ class TestDiscrepancyThresholds:
 
     def test_exceeds_tolerance(self):
         a = Decimal("1000.00")
-        b = Decimal("999.00")
+        b = Decimal("998.00")
         tolerance_pct = Decimal("0.001")  # 0.1%
         diff_pct = abs(a - b) / a
         assert diff_pct > tolerance_pct  # Should flag as discrepancy

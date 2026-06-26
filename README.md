@@ -68,11 +68,19 @@ flowchart TD
     Celery --> Supervisor
     Supervisor -.-> Progress
 
-    Classify & Extract & SAMR -.-> Qdrant
+    Classify -.-> Qdrant
+    Extract -.-> Qdrant
+    SAMR -.-> Qdrant
     Draft -.-> Mongo
     Supervisor -.-> PG
 
-    Classify & Extract & Quant & Compliance & SAMR & Recon & Draft -.-> LangChain
+    Classify -.-> LangChain
+    Extract -.-> LangChain
+    Quant -.-> LangChain
+    Compliance -.-> LangChain
+    SAMR -.-> LangChain
+    Recon -.-> LangChain
+    Draft -.-> LangChain
     LangChain -.-> MLflow
 ```
 
