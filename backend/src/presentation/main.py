@@ -24,6 +24,7 @@ from .dependencies import get_db, get_mongo, get_qdrant, get_publisher, get_llm
 from .middleware.rate_limit_middleware import RateLimitMiddleware
 from ..application.config import get_settings
 from ..infrastructure.telemetry.otel_setup import setup_telemetry
+from ..infrastructure.telemetry.mlflow_setup import setup_mlflow
 
 logger = structlog.get_logger(__name__)
 
@@ -36,6 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize OpenTelemetry tracing
     setup_telemetry(service_name="ventro-backend")
+
+    # Initialize MLflow observability
+    setup_mlflow(service_name="ventro-backend")
 
     # Initialize databases
     db = get_db()

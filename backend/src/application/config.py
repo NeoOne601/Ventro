@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     langfuse_host: str = "http://localhost:3001"
     langfuse_enabled: bool = False
 
+    # MLflow
+    mlflow_enabled: bool = True
+    mlflow_tracking_uri: str = "http://localhost:5000"
+    mlflow_experiment_name: str = "mas-vgfr-experiment"
+
     # Document Processing
     max_upload_size_mb: int = 50
     supported_formats: list[str] = Field(

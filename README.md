@@ -15,6 +15,67 @@
 
 At its core, Ventro ingests Purchase Orders, Goods Receipt Notes, and Invoices, running them through a customized LangGraph orchestrated state machine. 4 specialized AI agents (Classification, Extraction, Quantitative Validation, and Compliance) work in isolation to extract line items, calculate mathematical consistency, and perform fuzzy semantic entity resolution across varying vendor nomenclature. To eliminate LLM hallucinations, the platform enforces a strict Deterministic Isolation framework, requiring the AI to mathematically defend its extracted 3-way values against a unified Cartesian truth array before granting a final reconciliation verdict.
 
+```mermaid
+flowchart TD
+    subgraph Client [Client Interface]
+        Upload[Upload PO, GRN, Invoice]
+        Progress[WebSocket Live Updates]
+    end
+
+    subgraph API [FastAPI Backend]
+        Router[API Router]
+        Celery[Celery Async Workers]
+    end
+
+    subgraph StateMachine [LangGraph Orchestrator]
+        Supervisor((Supervisor / State))
+        
+        Classify[1. Classification Agent]
+        Extract[2. Extraction Agent]
+        Quant[3. Quantitative Agent]
+        Compliance[4. Compliance Agent]
+        SAMR[5. SAMR Agent]
+        Recon[6. Reconciliation Agent]
+        Draft[7. Drafting Agent]
+        
+        Supervisor -->|initialized| Classify
+        Classify -->|classified| Supervisor
+        Supervisor -->|classified| Extract
+        Extract -->|extracted| Supervisor
+        Supervisor -->|extracted| Quant
+        Quant -->|quantified| Supervisor
+        Supervisor -->|quantified| Compliance
+        Compliance -->|compliance_checked| Supervisor
+        Supervisor -->|compliance_checked| SAMR
+        SAMR -->|samr_complete| Supervisor
+        Supervisor -->|samr_complete| Recon
+        Recon -->|reconciled| Supervisor
+        Supervisor -->|reconciled| Draft
+        Draft -->|completed| Supervisor
+    end
+
+    subgraph Data [Data & Observability]
+        Qdrant[(Qdrant Vector DB)]
+        Mongo[(MongoDB - Docs)]
+        PG[(PostgreSQL - Audit)]
+        
+        MLflow[[MLflow Server]]
+        LangChain[[LangChain Autologging]]
+    end
+
+    Upload --> Router
+    Router --> Celery
+    Celery --> Supervisor
+    Supervisor -.-> Progress
+
+    Classify & Extract & SAMR -.-> Qdrant
+    Draft -.-> Mongo
+    Supervisor -.-> PG
+
+    Classify & Extract & Quant & Compliance & SAMR & Recon & Draft -.-> LangChain
+    LangChain -.-> MLflow
+```
+
 A defining feature of Ventro is its high-precision Retrieval-Augmented Generation (RAG) architecture. Utilizing a custom PyMuPDF chunking algorithm and a Qdrant vector database, Ventro embeds micro-fragment spatial coordinates (bounding boxes) alongside semantic vectors. This allows the system's generated audit workpapers to provide a fully Interactive Evidence Map acting as an infallible audit trail that flawlessly links AI conclusions back to the exact (x,y) pixel coordinates on the original source document.
 
 The distributed backend is powered by Python, FastAPI, PostgreSQL, and asynchronous Celery workers, seamlessly handling bulk concurrent uploads via Redis message brokering. Real-time workflow telemetry is streamed to a dynamic React/TypeScript frontend via WebSockets, providing multi-tenant users with live, granular progress updates. Protected by organizational JWT isolation and cross-tab token synchronization, Ventro is a scalable, resilient, and fully automated financial auditor designed for the modern enterprise.
@@ -134,7 +195,7 @@ Each agent has a single, well-defined job. They run in sequence, passing structu
 | **Databases** | PostgreSQL 16 (sessions, audit trail), MongoDB 7 (documents, workpapers) |
 | **Cache / Queue** | Redis 7, Celery (async job processing) |
 | **Frontend** | React 18, TypeScript, Vite |
-| **Observability** | OpenTelemetry distributed tracing, Prometheus metrics, structured JSON logging |
+| **Observability** | MLflow (LangChain autologging), OpenTelemetry tracing, Prometheus metrics, structured JSON logging |
 | **Deployment** | Docker Compose (development), Kubernetes (production) |
 
 **Multilingual support:** document extraction and entity matching work across Latin, Arabic, Hindi, Chinese, Japanese, Korean, Cyrillic, and 90+ additional scripts out of the box.
@@ -235,6 +296,9 @@ All settings are read from environment variables (or a `.env` file).
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `MONGO_URL` | — | MongoDB connection string |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis (rate limiting + denylist + cache) |
+| `MLFLOW_ENABLED` | `true` | Enable MLflow tracking and autologging |
+| `MLFLOW_TRACKING_URI` | `http://localhost:5000` | MLflow tracking server URI |
+| `MLFLOW_EXPERIMENT_NAME` | `mas-vgfr-experiment` | MLflow experiment name |
 | `RATE_LIMIT_STRATEGY` | `per_ip` | Rate limiting strategy (see above) |
 | `RATE_LIMIT_AUTH_REQUESTS` | `10` | Max auth requests per window |
 | `RATE_LIMIT_API_REQUESTS` | `120` | Max general API requests per window |
