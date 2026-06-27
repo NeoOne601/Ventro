@@ -14,8 +14,7 @@ test.describe('Bulk Upload', () => {
         // Without auth tokens, /bulk must never render its content
         await page.goto('/bulk')
         // Must redirect to login
-        const url = page.url()
-        expect(url).toContain('/login')
+        await expect(page).toHaveURL(/\/login/, { timeout: 8000 })
         // Must not contain the bulk upload UI text
         await expect(page.locator('text=Bulk Reconciliation')).not.toBeVisible()
     })
